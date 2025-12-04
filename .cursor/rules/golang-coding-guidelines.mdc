@@ -1,0 +1,383 @@
+---
+alwaysApply: false
+---
+
+# Golang Coding Guidelines for Currency Exchange Rate Service
+
+## Architecture Enforcement
+
+### Layer Boundaries
+- **Domain layer** (`internal/domain/`) MUST NOT import any infrastructure packages
+- **Domain layer** MUST NOT import `aws-sdk`, `net/http`, or any external API clients
+- **Application layer** (`internal/application/`) MUST only import domain interfaces, never implementations
+- **Infrastructure layer** (`internal/infrastructure/`) implements domain interfaces, never defines them
+
+### Interface Rules
+- ALL external dependencies MUST be abstracted through interfaces defined in `internal/domain/`
+- Interfaces MUST be named with `-er` suffix when appropriate (e.g., `ExchangeRateProvider`, `Repository`)
+- When creating a new external dependency, FIRST define the interface in domain layer, THEN implement in infrastructure
+
+### Dependency Injection
+- NEVER use global variables for dependencies
+- ALL structs that need dependencies MUST accept them via constructor functions (`New*`)
+- Constructor functions MUST validate inputs and return errors if invalid
+
+## Code Structure
+
+### File Organization
+- One type per file when possible (except related types)
+- Test files MUST be `*_test.go` in the same package
+- Integration tests MUST be in `tests/integration/` directory
+
+### Function Signatures
+- ALWAYS accept `context.Context` as the first parameter for functions that:
+  - Make external calls (API, database)
+  - Can be cancelled or timed out
+  - Perform I/O operations
+- Functions MUST return errors explicitly, never ignore them
+- Use named return values only when they improve readability
+
+### Error Handling
+- ALWAYS check errors immediately after function calls
+- Wrap errors with context: `fmt.Errorf("operation failed: %w", err)`
+- Create domain-specific error types in `internal/domain/errors.go`
+- NEVER return `nil` error when operation actually failed
+- Log errors at the appropriate level (use structured logging)
+
+## Go Conventions
+
+### Naming
+- Package names: lowercase, single word, no underscores
+- Exported types/functions: PascalCase
+- Unexported types/functions: camelCase
+- Constants: PascalCase for exported, camelCase for unexported
+- Interface names: `-er` suffix when appropriate
+
+### Variables
+- Use short variable names in small scopes (`ctx`, `req`, `resp`)
+- Use descriptive names in larger scopes
+- Prefer `:=` over `var` when type is obvious
+- Group related variable declarations
+
+### Types
+- Use type aliases for domain concepts (e.g., `type CurrencyCode string`)
+- Prefer composition over embedding
+- Keep structs small and focused
+- Add validation methods to domain entities
+
+## Testing Requirements
+
+### Unit Tests
+- MUST use table-driven tests for multiple scenarios
+- Test name format: `TestFunctionName_Scenario_ExpectedResult`
+- Mock external dependencies using interfaces
+- Test both success and error paths
+- Aim for >80% code coverage
+
+### Test Structure Template
+```go
+func TestFunctionName_Scenario_ExpectedResult(t *testing.T) {
+    tests := []struct {
+        name    string
+        setup   func() // mocks, test data
+        input   InputType
+        want    OutputType
+        wantErr bool
+        errType error // specific error type if needed
+    }{
+        {
+            name: "successful case",
+            setup: func() { /* setup mocks */ },
+            input: InputType{},
+            want: OutputType{},
+            wantErr: false,
+        },
+        {
+            name: "error case",
+            setup: func() { /* setup failing mocks */ },
+            input: InputType{},
+            wantErr: true,
+            errType: domain.ErrNotFound,
+        },
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            tt.setup()
+            // test implementation
+        })
+    }
+}
+```
+
+## AWS Lambda Specific
+
+### Handler Pattern
+- Lambda handlers MUST be thin wrappers that:
+  1. Parse request
+  2. Call use case
+  3. Format response
+  4. Handle errors
+- Handlers MUST NOT contain business logic
+- Use `github.com/aws/aws-lambda-go/events` for API Gateway events
+
+### Handler Template
+```go
+func Handler(ctx context.Context, event events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+    // 1. Parse and validate request
+    req, err := parseRequest(event)
+    if err != nil {
+        return errorResponse(400, err), nil
+    }
+    
+    // 2. Call use case
+    result, err := useCase.Execute(ctx, req)
+    if err != nil {
+        return errorResponse(getStatusCode(err), err), nil
+    }
+    
+    // 3. Format response
+    return successResponse(200, result), nil
+}
+```
+
+## DynamoDB Patterns
+
+### Repository Implementation
+- MUST implement domain repository interface
+- Use AWS SDK v2 (`github.com/aws/aws-sdk-go-v2/service/dynamodb`)
+- Handle DynamoDB-specific errors (ConditionalCheckFailedException, etc.)
+- Use TTL attribute for cache expiration
+- Always use `context.Context` for cancellation
+
+### Error Handling
+- Map DynamoDB errors to domain errors
+- Handle throttling errors with retry logic
+- Return `domain.ErrNotFound` when item doesn't exist
+
+## Circuit Breaker Implementation
+
+### State Management
+- States: `Closed`, `Open`, `HalfOpen`
+- MUST be thread-safe (use `sync.RWMutex`)
+- Track failure count and last failure time
+- Implement cooldown period before transitioning to HalfOpen
+
+### Usage Pattern
+```go
+func (p *Provider) FetchRate(ctx context.Context, base, target string) (*Rate, error) {
+    if !p.circuitBreaker.Allow() {
+        return nil, ErrCircuitOpen
+    }
+    
+    rate, err := p.doFetch(ctx, base, target)
+    if err != nil {
+        p.circuitBreaker.RecordFailure()
+        return nil, err
+    }
+    
+    p.circuitBreaker.RecordSuccess()
+    return rate, nil
+}
+```
+
+## HTTP Client Patterns
+
+### External API Calls
+- Use `http.Client` with timeout: `&http.Client{Timeout: 5 * time.Second}`
+- Always use `context.Context` for cancellation
+- Parse response body into domain entities, not infrastructure types
+- Handle HTTP status codes explicitly (4xx, 5xx)
+
+### Retry Logic
+- Implement exponential backoff for transient failures
+- Use `context.WithTimeout` to prevent hanging requests
+- Maximum retry attempts: 3
+- Backoff: 100ms, 200ms, 400ms
+
+## Configuration
+
+### Environment Variables
+- Load configuration in `main` or handler initialization
+- Validate required environment variables on startup
+- Use struct for configuration with validation
+- NEVER hardcode configuration values
+
+### Configuration Pattern
+```go
+type Config struct {
+    DynamoDBTable  string
+    ProviderAPIKey string
+    CacheTTL       time.Duration
+}
+
+func LoadConfig() (*Config, error) {
+    cfg := &Config{
+        DynamoDBTable:  os.Getenv("DYNAMODB_TABLE"),
+        ProviderAPIKey: os.Getenv("PROVIDER_API_KEY"),
+        CacheTTL:       parseDuration(os.Getenv("CACHE_TTL")),
+    }
+    
+    if err := cfg.Validate(); err != nil {
+        return nil, fmt.Errorf("invalid config: %w", err)
+    }
+    
+    return cfg, nil
+}
+```
+
+## Logging
+
+### Structured Logging
+- Use structured logging (consider `log/slog` or `zerolog`)
+- Include context in logs (request ID, user ID, etc.)
+- Log levels:
+  - `DEBUG`: Detailed information for debugging
+  - `INFO`: General informational messages
+  - `WARN`: Warning messages (recoverable errors)
+  - `ERROR`: Error messages (unrecoverable errors)
+
+### Log Context Pattern
+```go
+logger.Info("fetching exchange rate",
+    "base", base,
+    "target", target,
+    "request_id", requestID,
+)
+```
+
+## Code Quality Checks
+
+### Before Committing
+- Run `go fmt ./...`
+- Run `goimports -w .`
+- Run `go vet ./...`
+- Run `golangci-lint run`
+- Run tests: `go test ./... -race`
+- Check coverage: `go test ./... -cover`
+
+### Import Organization
+- Standard library imports
+- Third-party imports
+- Local imports (project packages)
+- Separate groups with blank line
+
+## Domain Entity Patterns
+
+### Entity Definition
+- Entities MUST be in `internal/domain/entity/`
+- Entities MUST have validation methods
+- Entities MUST be pure Go structs (no external dependencies)
+- Add `Validate()` method to entities
+
+### Entity Template
+```go
+type ExchangeRate struct {
+    Base      CurrencyCode
+    Target    CurrencyCode
+    Rate      float64
+    Timestamp time.Time
+    TTL       time.Time
+}
+
+func (e *ExchangeRate) Validate() error {
+    if e.Base == "" {
+        return ErrInvalidBaseCurrency
+    }
+    if e.Target == "" {
+        return ErrInvalidTargetCurrency
+    }
+    if e.Rate <= 0 {
+        return ErrInvalidRate
+    }
+    return nil
+}
+```
+
+## Use Case Patterns
+
+### Use Case Structure
+- One use case per file
+- Use case struct contains dependencies (repository, provider, etc.)
+- `Execute` method accepts context and DTO, returns DTO and error
+- Use case orchestrates domain logic, doesn't implement it
+
+### Use Case Template
+```go
+type GetExchangeRateUseCase struct {
+    repo     domain.ExchangeRateRepository
+    provider domain.ExchangeRateProvider
+    logger   Logger
+}
+
+func (uc *GetExchangeRateUseCase) Execute(ctx context.Context, req dto.GetRateRequest) (*dto.RateResponse, error) {
+    // 1. Validate request
+    if err := req.Validate(); err != nil {
+        return nil, fmt.Errorf("invalid request: %w", err)
+    }
+    
+    // 2. Check cache
+    cached, err := uc.repo.Get(ctx, req.Base, req.Target)
+    if err == nil && !cached.IsExpired() {
+        return dto.ToRateResponse(cached), nil
+    }
+    
+    // 3. Fetch from provider
+    rate, err := uc.provider.FetchRate(ctx, req.Base, req.Target)
+    if err != nil {
+        // Fallback to stale cache if available
+        if cached != nil {
+            uc.logger.Warn("using stale cache due to provider error", "error", err)
+            return dto.ToRateResponse(cached), nil
+        }
+        return nil, fmt.Errorf("failed to fetch rate: %w", err)
+    }
+    
+    // 4. Save to cache
+    if err := uc.repo.Save(ctx, rate); err != nil {
+        uc.logger.Warn("failed to save to cache", "error", err)
+    }
+    
+    // 5. Return response
+    return dto.ToRateResponse(rate), nil
+}
+```
+
+## Anti-Patterns to Avoid
+
+### ❌ NEVER Do This
+- Import infrastructure packages in domain layer
+- Use global variables for dependencies
+- Ignore errors (`_ = function()`)
+- Panic in application code (only in main/init if absolutely necessary)
+- Mix business logic in handlers
+- Create circular dependencies
+- Use `interface{}` when you can use generics or specific types
+- Hardcode values that should be configurable
+- Skip error handling for "unlikely" errors
+- Create god objects (structs with too many responsibilities)
+
+### ✅ ALWAYS Do This
+- Define interfaces in domain layer before implementing
+- Use dependency injection via constructors
+- Check and wrap errors with context
+- Keep functions small and focused
+- Write tests for error cases
+- Use context.Context for cancellation
+- Validate inputs at boundaries
+- Return domain errors, not infrastructure errors
+
+## Code Review Checklist
+
+Before submitting code, ensure:
+- [ ] All errors are handled explicitly
+- [ ] Context is used for cancellation/timeouts
+- [ ] Tests cover success and error paths
+- [ ] No infrastructure imports in domain layer
+- [ ] Interfaces are defined in domain layer
+- [ ] Dependencies are injected, not global
+- [ ] Code is formatted (`go fmt`)
+- [ ] Imports are organized (`goimports`)
+- [ ] No linter errors (`golangci-lint`)
+- [ ] Documentation comments for exported types/functions
+

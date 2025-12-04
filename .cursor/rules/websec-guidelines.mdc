@@ -1,0 +1,579 @@
+---
+alwaysApply: true
+---
+
+# Web Security Guidelines for Currency Exchange Rate Service
+
+## Input Validation & Sanitization
+
+### Path Parameter Validation
+- **MUST** validate all path parameters (`{base}`, `{target}`) before processing
+- Currency codes MUST match ISO 4217 format (3 uppercase letters: `[A-Z]{3}`)
+- **NEVER** trust user input; validate even if it comes from API Gateway
+- Reject requests with invalid currency codes immediately (400 Bad Request)
+
+### Validation Pattern
+```go
+const (
+    currencyCodePattern = `^[A-Z]{3}$`
+    maxCurrencyCodeLength = 3
+)
+
+func ValidateCurrencyCode(code string) error {
+    if len(code) != 3 {
+        return ErrInvalidCurrencyCode
+    }
+    matched, _ := regexp.MatchString(currencyCodePattern, code)
+    if !matched {
+        return ErrInvalidCurrencyCode
+    }
+    // Whitelist known currency codes
+    if !isValidISO4217(code) {
+        return ErrInvalidCurrencyCode
+    }
+    return nil
+}
+```
+
+### Request Size Limits
+- **MUST** enforce maximum request size limits (API Gateway: 10MB default)
+- Reject oversized requests before processing
+- Validate query parameters length and format
+
+### Input Sanitization Rules
+- **NEVER** use user input directly in log messages without sanitization
+- **NEVER** use user input in error messages that could leak information
+- Strip or reject control characters and non-printable characters
+- Normalize Unicode characters to prevent homograph attacks
+
+## Authentication & Authorization
+
+### API Key Authentication
+- **MUST** implement API key authentication for production endpoints
+- Store API keys securely (AWS Secrets Manager or Parameter Store)
+- **NEVER** hardcode API keys in code or commit them to version control
+- Rotate API keys regularly (every 90 days recommended)
+
+### API Gateway Authorization
+- Use API Gateway API Keys or IAM authorization
+- Implement request signing for sensitive operations
+- Validate API key on every request (don't cache validation)
+
+### Authorization Pattern
+```go
+func AuthorizeRequest(ctx context.Context, apiKey string) error {
+    // Fetch from AWS Secrets Manager or Parameter Store
+    validKey, err := getAPIKeyFromSecretsManager(ctx)
+    if err != nil {
+        return fmt.Errorf("authorization failed: %w", err)
+    }
+    
+    // Use constant-time comparison to prevent timing attacks
+    if !hmac.Equal([]byte(apiKey), []byte(validKey)) {
+        return ErrUnauthorized
+    }
+    
+    return nil
+}
+```
+
+## Rate Limiting & DDoS Protection
+
+### Rate Limiting Requirements
+- **MUST** implement rate limiting per API key/IP address
+- Use API Gateway throttling (default: 10,000 requests/second)
+- Implement per-client rate limits (e.g., 100 requests/minute per API key)
+- Return `429 Too Many Requests` with `Retry-After` header when limit exceeded
+
+### Rate Limiting Implementation
+```go
+type RateLimiter interface {
+    Allow(ctx context.Context, key string) (bool, error)
+    Record(ctx context.Context, key string) error
+}
+
+func (h *Handler) HandleRequest(ctx context.Context, req Request) error {
+    allowed, err := h.rateLimiter.Allow(ctx, req.APIKey)
+    if err != nil {
+        return fmt.Errorf("rate limit check failed: %w", err)
+    }
+    if !allowed {
+        return ErrRateLimitExceeded
+    }
+    
+    // Process request
+    return nil
+}
+```
+
+### DDoS Mitigation
+- Use AWS WAF (Web Application Firewall) rules
+- Implement request throttling at API Gateway level
+- Monitor for unusual traffic patterns
+- Use CloudWatch alarms for anomaly detection
+
+## Injection Prevention
+
+### DynamoDB Injection Prevention
+- **NEVER** construct DynamoDB queries using string concatenation with user input
+- **ALWAYS** use parameterized queries and expression attribute names/values
+- Validate and sanitize partition keys and sort keys before use
+- Use DynamoDB Expression Builder, never raw strings
+
+### Safe DynamoDB Query Pattern
+```go
+// ✅ CORRECT: Use expression builder
+func (r *Repository) Get(ctx context.Context, base, target string) (*Rate, error) {
+    // Validate inputs first
+    if err := ValidateCurrencyCode(base); err != nil {
+        return nil, err
+    }
+    if err := ValidateCurrencyCode(target); err != nil {
+        return nil, err
+    }
+    
+    // Use expression builder
+    key := map[string]types.AttributeValue{
+        "PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("RATE#%s#%s", base, target)},
+    }
+    
+    result, err := r.client.GetItem(ctx, &dynamodb.GetItemInput{
+        TableName: aws.String(r.table),
+        Key:       key,
+    })
+    // ...
+}
+
+// ❌ WRONG: String concatenation
+func (r *Repository) GetUnsafe(ctx context.Context, base, target string) (*Rate, error) {
+    query := fmt.Sprintf("PK = 'RATE#%s#%s'", base, target) // VULNERABLE!
+    // ...
+}
+```
+
+### Command Injection Prevention
+- **NEVER** execute shell commands with user input
+- **NEVER** use `os/exec` with user-controlled data
+- If external commands are needed, use hardcoded commands with validated parameters
+
+## Secrets Management
+
+### Secrets Storage
+- **MUST** use AWS Secrets Manager or Systems Manager Parameter Store for secrets
+- **NEVER** store secrets in:
+  - Environment variables (unless encrypted)
+  - Code files
+  - Configuration files committed to git
+  - Logs
+  - Error messages
+
+### Secrets Access Pattern
+```go
+func GetSecret(ctx context.Context, secretName string) (string, error) {
+    cfg, err := config.LoadDefaultConfig(ctx)
+    if err != nil {
+        return "", fmt.Errorf("failed to load config: %w", err)
+    }
+    
+    client := secretsmanager.NewFromConfig(cfg)
+    result, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+        SecretId: aws.String(secretName),
+    })
+    if err != nil {
+        return "", fmt.Errorf("failed to get secret: %w", err)
+    }
+    
+    return *result.SecretString, nil
+}
+```
+
+### API Keys & Credentials
+- Rotate external API keys regularly
+- Use IAM roles for AWS service access (not access keys)
+- Implement secret rotation procedures
+- Monitor for exposed credentials in logs/repos
+
+## Error Handling & Information Disclosure
+
+### Error Response Rules
+- **NEVER** expose internal error details to clients
+- **NEVER** leak stack traces, file paths, or system information
+- Return generic error messages to clients
+- Log detailed errors server-side only
+
+### Secure Error Handling Pattern
+```go
+// Domain error types (safe to return)
+var (
+    ErrInvalidCurrencyCode = errors.New("invalid currency code")
+    ErrRateNotFound        = errors.New("exchange rate not found")
+    ErrUnauthorized        = errors.New("unauthorized")
+)
+
+// Handler error response
+func errorResponse(statusCode int, err error) events.APIGatewayProxyResponse {
+    // Map internal errors to safe client messages
+    clientMessage := mapToClientMessage(err)
+    
+    // Log full error details server-side
+    logger.Error("request failed",
+        "error", err,
+        "status_code", statusCode,
+        "request_id", requestID,
+    )
+    
+    return events.APIGatewayProxyResponse{
+        StatusCode: statusCode,
+        Body:       toJSON(map[string]string{"error": clientMessage}),
+        Headers: map[string]string{
+            "Content-Type": "application/json",
+        },
+    }
+}
+
+func mapToClientMessage(err error) string {
+    switch {
+    case errors.Is(err, ErrInvalidCurrencyCode):
+        return "Invalid currency code provided"
+    case errors.Is(err, ErrRateNotFound):
+        return "Exchange rate not found"
+    case errors.Is(err, ErrUnauthorized):
+        return "Unauthorized access"
+    default:
+        return "An error occurred processing your request"
+    }
+}
+```
+
+### Error Logging
+- Log errors with context (request ID, user ID, timestamp)
+- **NEVER** log sensitive data (API keys, tokens, PII)
+- Use structured logging with appropriate log levels
+- Implement log retention and rotation policies
+
+## HTTPS & TLS
+
+### TLS Enforcement
+- **MUST** enforce HTTPS only (redirect HTTP to HTTPS)
+- Use API Gateway with HTTPS endpoints only
+- Set `Strict-Transport-Security` header (HSTS)
+- Use TLS 1.2 minimum (prefer TLS 1.3)
+
+### Security Headers
+```go
+func securityHeaders() map[string]string {
+    return map[string]string{
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+        "X-Content-Type-Options":    "nosniff",
+        "X-Frame-Options":           "DENY",
+        "X-XSS-Protection":           "1; mode=block",
+        "Content-Security-Policy":    "default-src 'self'",
+        "Referrer-Policy":            "strict-origin-when-cross-origin",
+    }
+}
+```
+
+## Logging Security
+
+### Sensitive Data Protection
+- **NEVER** log:
+  - API keys or authentication tokens
+  - Full request/response bodies (unless necessary)
+  - User credentials
+  - Personal Identifiable Information (PII)
+  - Secrets or passwords
+
+### Safe Logging Pattern
+```go
+// ✅ CORRECT: Sanitized logging
+logger.Info("exchange rate request",
+    "base_currency", base,           // Safe: validated currency code
+    "target_currency", target,        // Safe: validated currency code
+    "request_id", requestID,
+    "api_key_prefix", maskAPIKey(key), // Masked: only show first 4 chars
+)
+
+// ❌ WRONG: Logging sensitive data
+logger.Info("request", "api_key", apiKey) // VULNERABLE!
+logger.Debug("request body", "body", string(body)) // May contain sensitive data
+```
+
+### Log Sanitization
+```go
+func maskAPIKey(key string) string {
+    if len(key) < 8 {
+        return "****"
+    }
+    return key[:4] + "****" + key[len(key)-4:]
+}
+
+func sanitizeLogValue(value string) string {
+    // Remove potential secrets
+    patterns := []string{
+        `(?i)(api[_-]?key|token|password|secret)\s*[:=]\s*[\w-]+`,
+        `Bearer\s+[\w-]+`,
+    }
+    sanitized := value
+    for _, pattern := range patterns {
+        re := regexp.MustCompile(pattern)
+        sanitized = re.ReplaceAllString(sanitized, "[REDACTED]")
+    }
+    return sanitized
+}
+```
+
+## Dependency Security
+
+### Dependency Management
+- **MUST** regularly update dependencies (`go get -u ./...`)
+- Use `go mod verify` to verify module checksums
+- Scan dependencies for known vulnerabilities
+- Use tools like `nancy` or `gosec` for security scanning
+
+### Security Scanning
+```bash
+# Add to CI/CD pipeline
+go mod download
+go mod verify
+gosec ./...
+nancy sleuth
+```
+
+### Dependency Review Checklist
+- [ ] All dependencies are from trusted sources
+- [ ] Dependencies are actively maintained
+- [ ] No known CVEs in dependencies
+- [ ] Minimal dependency footprint
+- [ ] Regular dependency updates scheduled
+
+## AWS Security Best Practices
+
+### IAM Roles & Policies
+- **MUST** use IAM roles for Lambda execution (not access keys)
+- Follow principle of least privilege
+- Grant only necessary permissions
+- Use resource-based policies when possible
+
+### IAM Policy Example
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:region:account:table/ExchangeRates"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:region:account:secret:api-keys/*"
+    }
+  ]
+}
+```
+
+### API Gateway Security
+- Enable API Gateway request validation
+- Use API Gateway throttling and quotas
+- Enable CloudWatch logging for API Gateway
+- Use WAF rules for additional protection
+- Enable CORS only for trusted origins
+
+### VPC & Network Security
+- Use VPC endpoints for AWS services (if in VPC)
+- Restrict outbound network access
+- Use security groups with least privilege
+- Monitor network traffic for anomalies
+
+## Request Validation
+
+### Input Validation Checklist
+- [ ] Validate currency codes format and whitelist
+- [ ] Validate request size limits
+- [ ] Validate HTTP method (only allow GET for read operations)
+- [ ] Validate Content-Type header
+- [ ] Reject malformed JSON immediately
+- [ ] Validate query parameters (if any)
+
+### Validation Middleware Pattern
+```go
+func ValidateRequest(next HandlerFunc) HandlerFunc {
+    return func(ctx context.Context, event events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+        // Validate HTTP method
+        if event.HTTPMethod != "GET" {
+            return errorResponse(405, ErrMethodNotAllowed), nil
+        }
+        
+        // Validate path parameters
+        base := event.PathParameters["base"]
+        if err := ValidateCurrencyCode(base); err != nil {
+            return errorResponse(400, err), nil
+        }
+        
+        target := event.PathParameters["target"]
+        if err := ValidateCurrencyCode(target); err != nil {
+            return errorResponse(400, err), nil
+        }
+        
+        // Validate request size
+        if len(event.Body) > maxRequestSize {
+            return errorResponse(413, ErrRequestTooLarge), nil
+        }
+        
+        return next(ctx, event)
+    }
+}
+```
+
+## External API Security
+
+### API Client Security
+- **MUST** validate SSL certificates for external API calls
+- Use HTTPS only for external API communication
+- Implement request timeout (prevent hanging requests)
+- Validate external API responses before processing
+- Sanitize data from external APIs before caching
+
+### Secure HTTP Client Pattern
+```go
+func NewSecureHTTPClient() *http.Client {
+    return &http.Client{
+        Timeout: 10 * time.Second,
+        Transport: &http.Transport{
+            TLSClientConfig: &tls.Config{
+                MinVersion: tls.VersionTLS12,
+                // Verify certificates
+                InsecureSkipVerify: false,
+            },
+            // Disable HTTP/2 if not needed
+            ForceAttemptHTTP2: false,
+        },
+    }
+}
+```
+
+### External API Response Validation
+- Validate response structure before unmarshaling
+- Check response status codes
+- Validate data types and ranges
+- Sanitize before storing in cache
+
+## Security Monitoring & Incident Response
+
+### Security Monitoring
+- Monitor for:
+  - Unusual request patterns
+  - Failed authentication attempts
+  - Rate limit violations
+  - Error rate spikes
+  - Unusual API usage
+
+### CloudWatch Alarms
+- Set up alarms for:
+  - High error rates
+  - Unusual request volumes
+  - Authentication failures
+  - Lambda function errors
+
+### Incident Response
+- Document security incident response procedures
+- Have rollback procedures ready
+- Maintain security contact information
+- Regular security audits and reviews
+
+## Code Security Checklist
+
+Before deploying, verify:
+- [ ] All inputs are validated and sanitized
+- [ ] No secrets in code, logs, or config files
+- [ ] Error messages don't leak internal information
+- [ ] Rate limiting is implemented
+- [ ] HTTPS/TLS is enforced
+- [ ] Dependencies are up-to-date and scanned
+- [ ] IAM roles follow least privilege
+- [ ] Security headers are set
+- [ ] Logging doesn't expose sensitive data
+- [ ] External API calls use secure HTTP client
+- [ ] DynamoDB queries use parameterized inputs
+- [ ] Authentication is implemented for production
+
+## Security Testing
+
+### Security Test Requirements
+- Test input validation (invalid currency codes, oversized requests)
+- Test authentication/authorization (missing/invalid API keys)
+- Test rate limiting (exceed limits)
+- Test error handling (verify no information disclosure)
+- Test injection attacks (malformed inputs)
+- Test dependency vulnerabilities (regular scans)
+
+### Security Test Pattern
+```go
+func TestHandler_InvalidCurrencyCode_Returns400(t *testing.T) {
+    tests := []struct {
+        name   string
+        base   string
+        target string
+    }{
+        {"empty base", "", "USD"},
+        {"invalid format", "US", "USD"},
+        {"lowercase", "usd", "EUR"},
+        {"special chars", "US$", "EUR"},
+        {"sql injection attempt", "USD'; DROP TABLE--", "EUR"},
+        {"xss attempt", "USD<script>", "EUR"},
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Test implementation
+        })
+    }
+}
+```
+
+## Compliance & Privacy
+
+### Data Privacy
+- **NEVER** collect or store PII unless necessary
+- Implement data retention policies
+- Comply with GDPR/CCPA if applicable
+- Document data handling procedures
+
+### Audit Logging
+- Log all authentication attempts
+- Log all rate limit violations
+- Log security-relevant events
+- Retain logs according to compliance requirements
+
+## Security Anti-Patterns
+
+### ❌ NEVER Do This
+- Trust user input without validation
+- Log sensitive data (API keys, tokens, PII)
+- Expose internal errors to clients
+- Use string concatenation for DynamoDB queries
+- Hardcode secrets or credentials
+- Skip TLS certificate validation
+- Ignore dependency vulnerabilities
+- Return detailed error messages
+- Use admin/root IAM roles
+- Disable security headers
+
+### ✅ ALWAYS Do This
+- Validate and sanitize all inputs
+- Use parameterized queries
+- Store secrets in AWS Secrets Manager
+- Enforce HTTPS/TLS
+- Implement rate limiting
+- Use least privilege IAM policies
+- Log security events
+- Scan dependencies regularly
+- Return generic error messages to clients
+- Set security headers
