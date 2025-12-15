@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Currency Exchange Rate Service
+  
+  A serverless microservice that provides real-time and cached exchange rates
+  through a REST API, implementing Hexagonal Architecture and resilience patterns.
+
+# More values are available inside the context parameter defined
+# https://github.com/awslabs/serverless-application-model/blob/master/docs/parameters-and-globals.rst
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: provided.al2023
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+        POWERTOOLS_SERVICE_NAME: currenseen
+        POWERTOOLS_METRICS_NAMESPACE: Currenseen
+
+Resources:
+  ExchangeRateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: bootstrap
+      Description: Currency Exchange Rate Service Lambda Handler
+      Runtime: provided.al2023
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ExchangeRatesTable
+          AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+      Events:
+        GetRate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ExchangeRateApi
+            Path: /rates/{base}/{target}
+            Method: GET
+        GetAllRates:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ExchangeRateApi
+            Path: /rates/{base}
+            Method: GET
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ExchangeRateApi
+            Path: /health
+            Method: GET
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExchangeRatesTable
+        - SecretsManagerReadWrite:
+            SecretArn: !GetAtt ApiKeySecret.Arn
+      Layers:
+        # Lambda Layer for Go runtime will be added here
+        # Example: - !Ref GoRuntimeLayer
+
+  ExchangeRateApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      Auth:
+        ApiKeyRequired: true
+      DefinitionBody:
+        swagger: "2.0"
+        info:
+          title: Currency Exchange Rate API
+          version: "1.0"
+        paths:
+          /rates/{base}/{target}:
+            get:
+              summary: Get exchange rate for currency pair
+              parameters:
+                - name: base
+                  in: path
+                  required: true
+                  type: string
+                  description: Base currency code (ISO 4217)
+                - name: target
+                  in: path
+                  required: true
+                  type: string
+                  description: Target currency code (ISO 4217)
+              responses:
+                '200':
+                  description: Success
+                '400':
+                  description: Bad Request
+                '404':
+                  description: Not Found
+                '500':
+                  description: Internal Server Error
+          /rates/{base}:
+            get:
+              summary: Get all rates for base currency
+              parameters:
+                - name: base
+                  in: path
+                  required: true
+                  type: string
+                  description: Base currency code (ISO 4217)
+              responses:
+                '200':
+                  description: Success
+                '400':
+                  description: Bad Request
+                '500':
+                  description: Internal Server Error
+          /health:
+            get:
+              summary: Health check endpoint
+              responses:
+                '200':
+                  description: Service is healthy
+
+  ExchangeRatesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ExchangeRates
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: BaseCurrency
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: BaseCurrencyIndex
+          KeySchema:
+            - AttributeName: BaseCurrency
+              KeyType: HASH
+            - AttributeName: PK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: TTL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Project
+          Value: Currenseen
+        - Key: Environment
+          Value: !Ref Environment
+
+  ApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${Environment}/currenseen/api-keys'
+      Description: API keys for Currency Exchange Rate Service
+      GenerateSecretString:
+        SecretStringTemplate: '{"api-key": ""}'
+        GenerateStringKey: api-key
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+Outputs:
+  ExchangeRateApi:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${ExchangeRateApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  ExchangeRateFunction:
+    Description: "Exchange Rate Lambda Function ARN"
+    Value: !GetAtt ExchangeRateFunction.Arn
+  ExchangeRatesTable:
+    Description: "DynamoDB Table Name"
+    Value: !Ref ExchangeRatesTable
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name (dev, staging, prod)
+

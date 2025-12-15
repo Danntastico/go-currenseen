@@ -60,15 +60,203 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture diagrams a
 
 ## 📋 Current Status
 
-**Phase**: Architecture Definition ✅
+**Phase**: Phase 0 - Project Setup ✅
 
 - [x] Project specification
 - [x] Implementation plan
 - [x] Architecture definition
-- [ ] Phase 0: Project setup
+- [x] Phase 0: Project setup
 - [ ] Phase 1: Domain layer
 - [ ] Phase 2: Application layer
 - [ ] Phase 3+: Infrastructure adapters
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- **Go 1.21+**: [Install Go](https://golang.org/doc/install)
+- **AWS CLI**: [Install AWS CLI](https://aws.amazon.com/cli/)
+- **AWS SAM CLI**: [Install SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
+- **Make**: Usually pre-installed on Linux/macOS
+- **Docker**: Required for local SAM testing
+
+### Setup Instructions
+
+1. **Clone the repository** (if applicable):
+   ```bash
+   git clone <repository-url>
+   cd go-currenseen
+   ```
+
+2. **Install development tools**:
+   ```bash
+   make install-tools
+   ```
+   This installs:
+   - `golangci-lint` - Go linter
+   - `goimports` - Code formatter
+
+3. **Download dependencies**:
+   ```bash
+   make deps
+   # or
+   go mod download
+   ```
+
+4. **Verify setup**:
+   ```bash
+   make validate
+   ```
+   This runs formatting, linting, vetting, and tests.
+
+### Development Workflow
+
+#### Common Make Commands
+
+```bash
+# Format code
+make fmt
+
+# Run linter
+make lint
+
+# Run tests
+make test
+
+# Run tests with coverage
+make test-coverage
+
+# Build Lambda binary
+make build
+
+# Run all validation checks
+make validate
+
+# Clean build artifacts
+make clean
+
+# Run everything (clean, deps, validate, build)
+make all
+```
+
+#### Project Structure
+
+```
+go-currenseen/
+├── cmd/
+│   └── lambda/              # Lambda entry point (main.go)
+├── internal/
+│   ├── domain/              # Domain layer (no external dependencies)
+│   │   ├── entity/         # Domain entities
+│   │   ├── repository/     # Repository interfaces (ports)
+│   │   ├── provider/       # Provider interfaces (ports)
+│   │   ├── service/        # Domain services
+│   │   └── errors.go       # Domain error types
+│   ├── application/         # Application layer
+│   │   ├── usecase/        # Use cases
+│   │   └── dto/            # Data Transfer Objects
+│   └── infrastructure/     # Infrastructure layer (adapters)
+│       ├── adapter/        # External adapters (DynamoDB, HTTP, Lambda)
+│       ├── middleware/     # HTTP middleware
+│       └── config/         # Configuration management
+├── pkg/                     # Shared packages
+│   ├── circuitbreaker/     # Circuit breaker implementation
+│   └── logger/             # Structured logging
+├── tests/                   # Test files
+│   ├── unit/               # Unit tests
+│   └── integration/        # Integration tests
+├── infrastructure/          # AWS SAM templates
+│   ├── template.yaml       # SAM template
+│   └── samconfig.toml      # SAM configuration
+├── docs/                    # Documentation
+├── Makefile                 # Development tasks
+├── .golangci.yml           # Linter configuration
+├── .gitignore              # Git ignore rules
+└── go.mod                  # Go module definition
+```
+
+### Local Development
+
+#### Running Locally
+
+```bash
+# Build for local development
+make build-local
+
+# Run locally
+make run
+```
+
+#### AWS SAM Local Testing
+
+```bash
+# Build for SAM
+make sam-build
+
+# Run SAM locally (starts API Gateway locally)
+make sam-local
+```
+
+### Code Quality
+
+The project uses:
+- **golangci-lint**: Comprehensive Go linter (see `.golangci.yml`)
+- **goimports**: Automatic import organization
+- **go vet**: Static analysis
+- **go test**: Testing framework
+
+Run all quality checks:
+```bash
+make validate
+```
+
+### Testing
+
+```bash
+# Run all tests
+make test
+
+# Run unit tests only
+make test-unit
+
+# Run integration tests only
+make test-integration
+
+# Generate coverage report
+make test-coverage
+```
+
+### AWS Deployment
+
+```bash
+# Build and deploy
+make sam-deploy
+
+# Or manually
+sam build
+sam deploy --guided
+```
+
+### Environment Variables
+
+Create a `.env` file for local development (not committed to git):
+
+```bash
+TABLE_NAME=ExchangeRates
+LOG_LEVEL=DEBUG
+AWS_REGION=us-east-1
+```
+
+### Troubleshooting
+
+**Issue**: `golangci-lint: command not found`
+- Solution: Run `make install-tools`
+
+**Issue**: SAM build fails
+- Solution: Ensure Docker is running and AWS credentials are configured
+
+**Issue**: Go module errors
+- Solution: Run `go mod tidy` or `make tidy`
 
 ## 🛠️ Tech Stack
 
