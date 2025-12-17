@@ -321,3 +321,145 @@ expired := methodFunc(ratePtr, ttl)  // receiver passed as first argument
 
 ---
 
+## Maps
+
+**Definition:** Maps are key-value collections in Go. They provide fast lookup by key.
+
+**Syntax:** `map[KeyType]ValueType`
+
+**Example:**
+```go
+map[entity.CurrencyCode]*entity.ExchangeRate
+```
+
+**Components:**
+1. **`map`** - Go's map type keyword
+2. **`[KeyType]`** - Key type in square brackets (must be comparable: string, int, struct with comparable fields, etc.)
+3. **`ValueType`** - Value type (can be any type)
+
+### Map Declaration and Initialization
+
+**Declaration:**
+```go
+var rates map[CurrencyCode]*ExchangeRate  // nil map (cannot be used until initialized)
+```
+
+**Initialization:**
+```go
+// Method 1: Using make
+rates := make(map[CurrencyCode]*ExchangeRate)
+
+// Method 2: Using map literal
+rates := map[CurrencyCode]*ExchangeRate{
+    CurrencyCode("EUR"): &ExchangeRate{...},
+    CurrencyCode("GBP"): &ExchangeRate{...},
+}
+
+// Method 3: Empty map literal
+rates := map[CurrencyCode]*ExchangeRate{}
+```
+
+### Map Operations
+
+**Accessing values:**
+```go
+rate := rates[CurrencyCode("EUR")]  // Returns *ExchangeRate or nil if key doesn't exist
+```
+
+**Setting values:**
+```go
+rates[CurrencyCode("EUR")] = &ExchangeRate{...}
+```
+
+**Checking if key exists:**
+```go
+rate, exists := rates[CurrencyCode("EUR")]
+if exists {
+    // Key exists, rate is *ExchangeRate
+} else {
+    // Key doesn't exist, rate is nil
+}
+```
+
+**Deleting keys:**
+```go
+delete(rates, CurrencyCode("EUR"))
+```
+
+**Iterating:**
+```go
+for key, value := range rates {
+    // key is CurrencyCode
+    // value is *ExchangeRate
+}
+```
+
+### Why Use Pointer Types as Map Values?
+
+**Use pointer types `*Type` instead of value types `Type` when:**
+
+1. **Efficiency:** Avoids copying large structs when storing/retrieving from map
+   ```go
+   // ❌ Inefficient: copies entire struct
+   map[CurrencyCode]ExchangeRate
+   
+   // ✅ Efficient: stores pointer (8 bytes) instead of full struct
+   map[CurrencyCode]*ExchangeRate
+   ```
+
+2. **Consistency:** Matches return types from constructors and other functions
+   ```go
+   // Constructor returns pointer
+   func NewExchangeRate(...) (*ExchangeRate, error)
+   
+   // Map should store pointers for consistency
+   map[CurrencyCode]*ExchangeRate
+   ```
+
+3. **Mutability:** Allows modifying the struct through the map reference
+   ```go
+   rate := rates[CurrencyCode("EUR")]
+   rate.Stale = true  // Modifies the original struct
+   ```
+
+4. **Nil handling:** Can distinguish between "key doesn't exist" and "key exists with nil value"
+   ```go
+   rate, exists := rates[key]
+   if !exists {
+       // Key not in map
+   } else if rate == nil {
+       // Key exists but value is nil
+   }
+   ```
+
+5. **Memory efficiency:** Multiple map entries can reference the same struct instance if needed
+
+**When to use value types in maps:**
+- Small types (primitives, small structs)
+- Immutable types
+- When you want independent copies
+
+**Example from codebase:**
+```go
+FetchAllRates(ctx context.Context, base entity.CurrencyCode) (map[entity.CurrencyCode]*entity.ExchangeRate, error)
+//                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//                                                                  Keys: CurrencyCode, Values: *ExchangeRate (pointers)
+```
+
+### Map Characteristics
+
+- **Zero value:** `nil` - cannot be used until initialized with `make()` or literal
+- **Key requirement:** Keys must be comparable (no slices, maps, or functions as keys)
+- **Reference type:** Maps are reference types (like slices and channels)
+- **Not thread-safe:** Use `sync.Map` or mutexes for concurrent access
+- **Order:** Iteration order is random (not guaranteed)
+
+### Summary
+- **Syntax:** `map[KeyType]ValueType` - key type in brackets, value type after
+- **Use pointer values:** For large structs, consistency, mutability, and efficiency
+- **Operations:** Access with `map[key]`, check existence with `value, ok := map[key]`
+- **Initialization:** Use `make()` or map literal, never use nil map
+- **Keys:** Must be comparable types (string, int, struct with comparable fields)
+
+---
+
