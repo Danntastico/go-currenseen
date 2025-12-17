@@ -15,13 +15,14 @@ type ExchangeRate struct {
 	Stale     bool // Indicates if the rate is stale (from cache fallback)
 }
 
+// This is a constructor function, using the Constructor/Factory pattern
 // NewExchangeRate creates a new ExchangeRate with validation.
 // Returns an error if any field is invalid.
 func NewExchangeRate(base, target CurrencyCode, rate float64, timestamp time.Time) (*ExchangeRate, error) {
 	if err := validateExchangeRate(base, target, rate, timestamp); err != nil {
 		return nil, err
 	}
-
+	// Address-of operator, returns the memory address of the struct
 	return &ExchangeRate{
 		Base:      base,
 		Target:    target,
@@ -97,5 +98,3 @@ func (e *ExchangeRate) Age() time.Duration {
 func (e *ExchangeRate) IsValid(ttl time.Duration) bool {
 	return !e.IsExpired(ttl)
 }
-
-
