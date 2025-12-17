@@ -117,26 +117,44 @@ if err != nil {
 
 ---
 
-## Constructor Pattern (Returning Pointers)
+## Constructor Pattern
 
 **Pattern Name:** Constructor/Factory Pattern
 
-**Syntax:**
+**Naming Convention:** Constructor functions start with `New` followed by the type name: `NewTypeName(...)`
+
+**Syntax Patterns:**
 ```go
+// Pattern 1: Returns pointer
 func NewType(...params) (*Type, error) {
-    // validation
-    if err := validate(...); err != nil {
-        return nil, err
-    }
-    // Address-of operator returns memory address
     return &Type{...}, nil
+}
+
+// Pattern 2: Returns value
+func NewType(...params) (Type, error) {
+    return Type{...}, nil
 }
 ```
 
 **Components:**
-1. **Return type:** `(*Type, error)` - returns pointer to struct and error
-2. **Pointer type:** `*Type` - indicates function returns a memory reference
-3. **Address-of operator:** `&Type{...}` - creates struct literal and returns its address
+1. **Function name:** `NewTypeName` - follows Go naming convention
+2. **Return type:** Can be `(*Type, error)` or `(Type, error)` depending on type
+3. **Address-of operator:** `&Type{...}` - used when returning pointer
+
+### When to Return Value vs Pointer
+
+**Return value `(Type, error)` when:**
+- Type is small (primitives, small structs, type aliases like `string`)
+- Type is immutable or doesn't need mutation
+- Methods use value receivers
+- Example: `func NewCurrencyCode(code string) (CurrencyCode, error)`
+
+**Return pointer `(*Type, error)` when:**
+- Type is large (structs with many fields)
+- Methods use pointer receivers
+- Need to return `nil` to indicate failure
+- Need mutability
+- Example: `func NewExchangeRate(...) (*ExchangeRate, error)`
 
 **Why return pointers:**
 1. **Consistency:** If methods use pointer receivers `(e *ExchangeRate)`, constructor should return pointer
@@ -160,10 +178,20 @@ func NewExchangeRate(base, target CurrencyCode, rate float64, timestamp time.Tim
 }
 ```
 
-**Memory behavior:**
+**Memory behavior (pointer return):**
 - `&ExchangeRate{...}` creates struct in memory and returns its address
 - Caller receives pointer (reference), not a copy
 - Methods with pointer receivers can modify the original struct
+
+**Memory behavior (value return):**
+- `CurrencyCode{...}` creates value directly
+- Caller receives a copy of the value
+- Methods with value receivers work on copies
+
+**Summary:**
+- **Naming:** Always start with `New` followed by type name
+- **Return type:** Choose value or pointer based on type characteristics
+- **Pattern:** `func NewTypeName(...) (ReturnType, error)` where `ReturnType` is `Type` or `*Type`
 
 ---
 
