@@ -223,3 +223,73 @@ backToValue := *ptr         // dereference: backToValue is ExchangeRate
 
 ---
 
+## Method Receiver Pattern
+
+**Syntax:** `func (receiver Type) MethodName(params) returnType`
+**Definition:** Methods are functions with a receiver that associate the function with a type. The receiver appears between `func` and the method name.
+
+### Components
+1. **Receiver:** `(e *ExchangeRate)` - defines which type the method belongs to
+2. **Receiver variable:** `e` - name used inside the method to access the receiver
+3. **Receiver type:** `*ExchangeRate` - the type this method is associated with
+
+**Example:**
+```go
+func (e *ExchangeRate) IsExpired(ttl time.Duration) bool {
+    expirationTime := e.Timestamp.Add(ttl)
+    return time.Now().After(expirationTime)
+}
+```
+
+### Calling Methods
+**Syntax:** `instance.MethodName(args)`
+
+**Example:**
+```go
+rate := &ExchangeRate{
+    Base:      CurrencyCode("USD"),
+    Target:    CurrencyCode("EUR"),
+    Rate:      1.10,
+    Timestamp: time.Now(),
+}
+
+expired := rate.IsExpired(5 * time.Minute)
+//        ^^^^ instance  ^^^^^^^^^^^^^^^^ method call
+```
+
+**Key point:** Call on an instance, not the type directly. `rate.IsExpired(ttl)`, not `ExchangeRate.IsExpired(ttl)`.
+
+### Pointer Receiver Behavior
+When a method has a pointer receiver `(e *ExchangeRate)`, Go automatically allows calling it on both pointers and values:
+
+```go
+ratePtr := &ExchangeRate{...}  // pointer
+ratePtr.IsExpired(ttl)         // ✅ works directly
+
+rateValue := ExchangeRate{...}  // value
+rateValue.IsExpired(ttl)        // ✅ also works! Go auto-converts to (&rateValue).IsExpired()
+```
+
+**Automatic conversion:** Go automatically takes the address when calling a pointer receiver method on a value.
+
+### Method Expression (Advanced)
+**Syntax:** `Type.MethodName` creates a function value where the receiver becomes the first parameter.
+
+**Example:**
+```go
+// Method expression - creates a function value
+methodFunc := (*ExchangeRate).IsExpired
+expired := methodFunc(ratePtr, ttl)  // receiver passed as first argument
+```
+
+**Use case:** Less common, used when you need to pass the method as a function value.
+
+### Summary
+- **Method:** Function with a receiver `func (receiver Type) Method()`
+- **Receiver:** `(e *ExchangeRate)` - associates method with type
+- **Call syntax:** `instance.MethodName(args)` - call on instance, not type
+- **Pointer receiver:** Works on both pointers and values (automatic conversion)
+- **Receiver variable:** `e` - used inside method to access the receiver's fields/methods
+
+---
+
