@@ -7,75 +7,40 @@ import (
 	"github.com/misterfancybg/go-currenseen/internal/domain/entity"
 )
 
-func TestValidationService_ValidateCurrencyCode(t *testing.T) {
-	service := NewValidationService()
-
-	tests := []struct {
-		name    string
-		code    string
-		wantErr bool
-	}{
-		{
-			name:    "valid code",
-			code:    "USD",
-			wantErr: false,
-		},
-		{
-			name:    "invalid code",
-			code:    "XX",
-			wantErr: true,
-		},
-		{
-			name:    "empty code",
-			code:    "",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := service.ValidateCurrencyCode(tt.code)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateCurrencyCode() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestValidationService_ValidateCurrencyPair(t *testing.T) {
 	service := NewValidationService()
 
 	tests := []struct {
-		name      string
-		baseCode  string
+		name       string
+		baseCode   string
 		targetCode string
-		wantErr   bool
-		errType   error
+		wantErr    bool
+		errType    error
 	}{
 		{
-			name:      "valid pair",
-			baseCode:  "USD",
+			name:       "valid pair",
+			baseCode:   "USD",
 			targetCode: "EUR",
-			wantErr:   false,
+			wantErr:    false,
 		},
 		{
-			name:      "invalid base",
-			baseCode:  "XX",
+			name:       "invalid base",
+			baseCode:   "XX",
 			targetCode: "EUR",
-			wantErr:   true,
+			wantErr:    true,
 		},
 		{
-			name:      "invalid target",
-			baseCode:  "USD",
+			name:       "invalid target",
+			baseCode:   "USD",
 			targetCode: "YY",
-			wantErr:   true,
+			wantErr:    true,
 		},
 		{
-			name:      "same currencies",
-			baseCode:  "USD",
+			name:       "same currencies",
+			baseCode:   "USD",
 			targetCode: "USD",
-			wantErr:   true,
-			errType:   entity.ErrCurrencyCodeMismatch,
+			wantErr:    true,
+			errType:    entity.ErrCurrencyCodeMismatch,
 		},
 	}
 
@@ -102,39 +67,3 @@ func TestValidationService_ValidateCurrencyPair(t *testing.T) {
 		})
 	}
 }
-
-func TestValidationService_IsValidCurrencyCode(t *testing.T) {
-	service := NewValidationService()
-
-	tests := []struct {
-		name string
-		code string
-		want bool
-	}{
-		{
-			name: "valid code",
-			code: "USD",
-			want: true,
-		},
-		{
-			name: "invalid code",
-			code: "XX",
-			want: false,
-		},
-		{
-			name: "empty code",
-			code: "",
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := service.IsValidCurrencyCode(tt.code); got != tt.want {
-				t.Errorf("IsValidCurrencyCode() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-

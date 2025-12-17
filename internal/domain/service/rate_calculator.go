@@ -46,19 +46,17 @@ func (c *RateCalculator) InverseRate(rate *entity.ExchangeRate) (*entity.Exchang
 
 	inverseRate := 1.0 / rate.Rate
 
-	// Swap base and target for inverse rate
+	// Swap base and target for inverse rate, preserve stale flag
 	inverse, err := entity.NewExchangeRate(
 		rate.Target,
 		rate.Base,
 		inverseRate,
 		rate.Timestamp,
+		rate.Stale, // Preserve stale flag through constructor
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create inverse rate: %w", err)
 	}
-
-	// Preserve stale flag
-	inverse.Stale = rate.Stale
 
 	return inverse, nil
 }
@@ -97,20 +95,19 @@ func (c *RateCalculator) CrossRate(rate1, rate2 *entity.ExchangeRate) (*entity.E
 		timestamp = rate2.Timestamp
 	}
 
+	// Mark as stale if either rate is stale
+	isStale := rate1.Stale || rate2.Stale
+
 	crossRate, err := entity.NewExchangeRate(
 		rate1.Target,
 		rate2.Target,
 		crossRateValue,
 		timestamp,
+		isStale, // Set stale flag through constructor
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cross rate: %w", err)
 	}
 
-	// Mark as stale if either rate is stale
-	crossRate.Stale = rate1.Stale || rate2.Stale
-
 	return crossRate, nil
 }
-
-

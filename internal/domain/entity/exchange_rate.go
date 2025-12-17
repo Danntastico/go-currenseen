@@ -18,7 +18,8 @@ type ExchangeRate struct {
 // This is a constructor function, using the Constructor/Factory pattern
 // NewExchangeRate creates a new ExchangeRate with validation.
 // Returns an error if any field is invalid.
-func NewExchangeRate(base, target CurrencyCode, rate float64, timestamp time.Time) (*ExchangeRate, error) {
+// The stale parameter indicates if the rate is stale (from cache fallback).
+func NewExchangeRate(base, target CurrencyCode, rate float64, timestamp time.Time, stale bool) (*ExchangeRate, error) {
 	if err := validateExchangeRate(base, target, rate, timestamp); err != nil {
 		return nil, err
 	}
@@ -28,24 +29,15 @@ func NewExchangeRate(base, target CurrencyCode, rate float64, timestamp time.Tim
 		Target:    target,
 		Rate:      rate,
 		Timestamp: timestamp,
-		Stale:     false,
+		Stale:     stale,
 	}, nil
 }
 
 // NewStaleExchangeRate creates a new ExchangeRate marked as stale.
 // This is used when returning cached data as a fallback.
+// Deprecated: Use NewExchangeRate with stale=true instead.
 func NewStaleExchangeRate(base, target CurrencyCode, rate float64, timestamp time.Time) (*ExchangeRate, error) {
-	if err := validateExchangeRate(base, target, rate, timestamp); err != nil {
-		return nil, err
-	}
-
-	return &ExchangeRate{
-		Base:      base,
-		Target:    target,
-		Rate:      rate,
-		Timestamp: timestamp,
-		Stale:     true,
-	}, nil
+	return NewExchangeRate(base, target, rate, timestamp, true)
 }
 
 // validateExchangeRate validates all fields of an ExchangeRate.
@@ -80,13 +72,16 @@ func validateExchangeRate(base, target CurrencyCode, rate float64, timestamp tim
 }
 
 // IsExpired checks if the exchange rate is expired based on the given TTL duration.
+// Returns true if the current time is at or after the expiration time (timestamp + TTL).
+// Returns false if TTL is zero or negative (no expiration).
 func (e *ExchangeRate) IsExpired(ttl time.Duration) bool {
 	if ttl <= 0 {
 		return false // No expiration if TTL is zero or negative
 	}
 
 	expirationTime := e.Timestamp.Add(ttl)
-	return time.Now().After(expirationTime)
+	// Use !Before() to include boundary: "not before" = "after or equal"
+	return !time.Now().Before(expirationTime)
 }
 
 // Age returns the age of the exchange rate.

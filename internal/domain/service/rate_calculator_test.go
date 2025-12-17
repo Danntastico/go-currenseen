@@ -13,7 +13,7 @@ func TestRateCalculator_Convert(t *testing.T) {
 	target, _ := entity.NewCurrencyCode("EUR")
 	timestamp := time.Now()
 
-	rate, err := entity.NewExchangeRate(base, target, 0.85, timestamp)
+	rate, err := entity.NewExchangeRate(base, target, 0.85, timestamp, false)
 	if err != nil {
 		t.Fatalf("Failed to create exchange rate: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestRateCalculator_InverseRate(t *testing.T) {
 	target, _ := entity.NewCurrencyCode("EUR")
 	timestamp := time.Now()
 
-	rate, err := entity.NewExchangeRate(base, target, 0.85, timestamp)
+	rate, err := entity.NewExchangeRate(base, target, 0.85, timestamp, false)
 	if err != nil {
 		t.Fatalf("Failed to create exchange rate: %v", err)
 	}
@@ -131,6 +131,7 @@ func TestRateCalculator_CrossRate(t *testing.T) {
 		entity.CurrencyCode("EUR"),
 		0.85,
 		timestamp,
+		false,
 	)
 
 	usdGbp, _ := entity.NewExchangeRate(
@@ -138,6 +139,7 @@ func TestRateCalculator_CrossRate(t *testing.T) {
 		entity.CurrencyCode("GBP"),
 		0.75,
 		timestamp,
+		false,
 	)
 
 	eurGbp, _ := entity.NewExchangeRate(
@@ -145,6 +147,7 @@ func TestRateCalculator_CrossRate(t *testing.T) {
 		entity.CurrencyCode("GBP"),
 		0.90,
 		timestamp,
+		false,
 	)
 
 	tests := []struct {
@@ -209,5 +212,3 @@ func TestRateCalculator_CrossRate(t *testing.T) {
 		})
 	}
 }
-
-

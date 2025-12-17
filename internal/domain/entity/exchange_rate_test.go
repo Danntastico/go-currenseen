@@ -88,7 +88,7 @@ func TestNewExchangeRate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewExchangeRate(tt.base, tt.target, tt.rate, tt.timestamp)
+			got, err := NewExchangeRate(tt.base, tt.target, tt.rate, tt.timestamp, tt.wantStale)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewExchangeRate() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -173,7 +173,7 @@ func TestExchangeRate_IsExpired(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rate, err := NewExchangeRate(base, target, 0.85, tt.timestamp)
+			rate, err := NewExchangeRate(base, target, 0.85, tt.timestamp, false)
 			if err != nil {
 				t.Fatalf("NewExchangeRate() error = %v", err)
 			}
@@ -191,7 +191,7 @@ func TestExchangeRate_Age(t *testing.T) {
 	expectedAge := 2 * time.Hour
 	timestamp := time.Now().Add(-expectedAge)
 
-	rate, err := NewExchangeRate(base, target, 0.85, timestamp)
+	rate, err := NewExchangeRate(base, target, 0.85, timestamp, false)
 	if err != nil {
 		t.Fatalf("NewExchangeRate() error = %v", err)
 	}
@@ -231,7 +231,7 @@ func TestExchangeRate_IsValid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rate, err := NewExchangeRate(base, target, 0.85, tt.timestamp)
+			rate, err := NewExchangeRate(base, target, 0.85, tt.timestamp, false)
 			if err != nil {
 				t.Fatalf("NewExchangeRate() error = %v", err)
 			}
@@ -242,4 +242,3 @@ func TestExchangeRate_IsValid(t *testing.T) {
 		})
 	}
 }
-
