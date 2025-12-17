@@ -167,3 +167,59 @@ func NewExchangeRate(base, target CurrencyCode, rate float64, timestamp time.Tim
 
 ---
 
+## Pointer Operators: Address-of (&) vs Dereference (*)
+
+### Address-of Operator: `&`
+**Syntax:** `&value`
+**Name:** Address-of operator
+**Definition:** Returns the memory address (pointer) of a value.
+
+**Example:**
+```go
+rate := ExchangeRate{...}  // rate is ExchangeRate (value)
+ptr := &rate               // ptr is *ExchangeRate (pointer to rate)
+```
+
+**Use:** Get a pointer to a value (create a reference).
+
+### Dereference Operator: `*`
+**Syntax:** `*pointer`
+**Name:** Dereference operator (also called indirection operator)
+**Definition:** Gets the value that a pointer points to.
+
+**Example:**
+```go
+ptr := &ExchangeRate{...}  // ptr is *ExchangeRate (pointer)
+value := *ptr              // value is ExchangeRate (dereferenced value)
+```
+
+**Use:** Access the value stored at a memory address.
+
+### Pointer Type: `*Type`
+**Syntax:** `*Type` (in type declarations)
+**Name:** Pointer type or "pointer to Type"
+**Definition:** Declares a type that is a pointer/reference to another type.
+
+**Example:**
+```go
+func NewExchangeRate(...) (*ExchangeRate, error)
+//                        ^^^^^^^^^^^^^^
+//                        Pointer type: "pointer to ExchangeRate"
+```
+
+**Use:** Declare that a variable, parameter, or return value is a pointer.
+
+### Summary
+- `&value` = Address-of operator (gets the address/memory location of a value)
+- `*pointer` = Dereference operator (gets the value at an address)
+- `*Type` = Pointer type (declares a type that points to Type)
+
+**Relationship:**
+```go
+value := ExchangeRate{...}  // value
+ptr := &value               // get address: ptr is *ExchangeRate
+backToValue := *ptr         // dereference: backToValue is ExchangeRate
+```
+
+---
+
