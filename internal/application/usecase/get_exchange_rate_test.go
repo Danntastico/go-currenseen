@@ -57,7 +57,7 @@ func (m *mockRepository) GetStale(ctx context.Context, base, target entity.Curre
 // mockProvider is a mock implementation of ExchangeRateProvider for testing.
 type mockProvider struct {
 	fetchRateFunc     func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error)
-	fetchAllRatesFunc func(ctx context.Context, base entity.CurrencyCode) (map[entity.CurrencyCode]*entity.ExchangeRate, error)
+	fetchAllRatesFunc func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error)
 }
 
 func (m *mockProvider) FetchRate(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
@@ -67,7 +67,7 @@ func (m *mockProvider) FetchRate(ctx context.Context, base, target entity.Curren
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockProvider) FetchAllRates(ctx context.Context, base entity.CurrencyCode) (map[entity.CurrencyCode]*entity.ExchangeRate, error) {
+func (m *mockProvider) FetchAllRates(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
 	if m.fetchAllRatesFunc != nil {
 		return m.fetchAllRatesFunc(ctx, base)
 	}

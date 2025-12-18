@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -49,6 +50,30 @@ func TestNewExchangeRate(t *testing.T) {
 			base:      base,
 			target:    target,
 			rate:      -0.85,
+			timestamp: validTimestamp,
+			wantErr:   true,
+		},
+		{
+			name:      "infinity rate",
+			base:      base,
+			target:    target,
+			rate:      math.Inf(1),
+			timestamp: validTimestamp,
+			wantErr:   true,
+		},
+		{
+			name:      "negative infinity rate",
+			base:      base,
+			target:    target,
+			rate:      math.Inf(-1),
+			timestamp: validTimestamp,
+			wantErr:   true,
+		},
+		{
+			name:      "NaN rate",
+			base:      base,
+			target:    target,
+			rate:      math.NaN(),
 			timestamp: validTimestamp,
 			wantErr:   true,
 		},

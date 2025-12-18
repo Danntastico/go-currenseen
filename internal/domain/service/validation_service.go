@@ -33,7 +33,7 @@ func (s *ValidationService) ValidateCurrencyPair(baseCode, targetCode string) (b
 	}
 
 	if base.Equal(target) {
-		return "", "", entity.ErrCurrencyCodeMismatch
+		return "", "", fmt.Errorf("currency pair validation: %w", entity.ErrCurrencyCodeMismatch)
 	}
 
 	return base, target, nil

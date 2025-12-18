@@ -22,7 +22,7 @@ func TestGetAllRatesUseCase_Execute(t *testing.T) {
 		name              string
 		request           dto.GetRatesRequest
 		repoGetByBaseFunc func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error)
-		providerFunc      func(ctx context.Context, base entity.CurrencyCode) (map[entity.CurrencyCode]*entity.ExchangeRate, error)
+		providerFunc      func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error)
 		wantErr           bool
 		wantStale         bool
 		validateResult    func(t *testing.T, resp dto.RatesResponse)
@@ -52,13 +52,10 @@ func TestGetAllRatesUseCase_Execute(t *testing.T) {
 			repoGetByBaseFunc: func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
 				return []*entity.ExchangeRate{}, nil
 			},
-			providerFunc: func(ctx context.Context, base entity.CurrencyCode) (map[entity.CurrencyCode]*entity.ExchangeRate, error) {
+			providerFunc: func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
 				rate1, _ := entity.NewExchangeRate(base, eur, 0.86, time.Now(), false)
 				rate2, _ := entity.NewExchangeRate(base, gbp, 0.76, time.Now(), false)
-				return map[entity.CurrencyCode]*entity.ExchangeRate{
-					eur: rate1,
-					gbp: rate2,
-				}, nil
+				return []*entity.ExchangeRate{rate1, rate2}, nil
 			},
 			wantErr:   false,
 			wantStale: false,
@@ -75,7 +72,7 @@ func TestGetAllRatesUseCase_Execute(t *testing.T) {
 				rate1, _ := entity.NewExchangeRate(base, eur, 0.85, time.Now().Add(-2*time.Hour), false)
 				return []*entity.ExchangeRate{rate1}, nil
 			},
-			providerFunc: func(ctx context.Context, base entity.CurrencyCode) (map[entity.CurrencyCode]*entity.ExchangeRate, error) {
+			providerFunc: func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
 				return nil, errors.New("provider unavailable")
 			},
 			wantErr:   false,
@@ -100,7 +97,7 @@ func TestGetAllRatesUseCase_Execute(t *testing.T) {
 			repoGetByBaseFunc: func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
 				return []*entity.ExchangeRate{}, nil
 			},
-			providerFunc: func(ctx context.Context, base entity.CurrencyCode) (map[entity.CurrencyCode]*entity.ExchangeRate, error) {
+			providerFunc: func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
 				return nil, errors.New("provider unavailable")
 			},
 			wantErr: true,

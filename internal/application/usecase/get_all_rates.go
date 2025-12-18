@@ -72,7 +72,7 @@ func (uc *GetAllRatesUseCase) Execute(ctx context.Context, req dto.GetRatesReque
 	}
 
 	// Step 2: Fetch from external API
-	freshRatesMap, err := uc.provider.FetchAllRates(ctx, base)
+	freshRates, err := uc.provider.FetchAllRates(ctx, base)
 	if err != nil {
 		// If external API fails, return cached rates (even if expired) as fallback
 		if len(cachedRates) > 0 {
@@ -100,7 +100,7 @@ func (uc *GetAllRatesUseCase) Execute(ctx context.Context, req dto.GetRatesReque
 	}
 
 	// Step 3: Save all rates to cache
-	for _, rate := range freshRatesMap {
+	for _, rate := range freshRates {
 		if rate != nil {
 			if saveErr := uc.repository.Save(ctx, rate, uc.cacheTTL); saveErr != nil {
 				// Log error but continue - cache save failure shouldn't break the flow
@@ -109,13 +109,5 @@ func (uc *GetAllRatesUseCase) Execute(ctx context.Context, req dto.GetRatesReque
 		}
 	}
 
-	// Convert map to slice for response
-	rates := make([]*entity.ExchangeRate, 0, len(freshRatesMap))
-	for _, rate := range freshRatesMap {
-		if rate != nil {
-			rates = append(rates, rate)
-		}
-	}
-
-	return dto.ToRatesResponse(rates), nil
+	return dto.ToRatesResponse(freshRates), nil
 }

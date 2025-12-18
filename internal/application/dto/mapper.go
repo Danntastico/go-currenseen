@@ -64,27 +64,6 @@ func ToRatesResponse(rates []*entity.ExchangeRate) RatesResponse {
 	}
 }
 
-// ToRatesResponseFromMap converts a map of domain ExchangeRate entities to a RatesResponse DTO.
-// This is useful when converting from provider responses which return maps.
-func ToRatesResponseFromMap(ratesMap map[entity.CurrencyCode]*entity.ExchangeRate) RatesResponse {
-	if len(ratesMap) == 0 {
-		return RatesResponse{
-			Rates:     make(map[string]RateResponse),
-			Timestamp: time.Now(),
-		}
-	}
-
-	// Convert map to slice first
-	rates := make([]*entity.ExchangeRate, 0, len(ratesMap))
-	for _, rate := range ratesMap {
-		if rate != nil {
-			rates = append(rates, rate)
-		}
-	}
-
-	return ToRatesResponse(rates)
-}
-
 // ToErrorResponse creates an ErrorResponse from an error.
 func ToErrorResponse(err error, code string) ErrorResponse {
 	return ErrorResponse{

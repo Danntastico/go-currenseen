@@ -46,10 +46,7 @@ type ExchangeRateProvider interface {
 
 	// FetchAllRates retrieves all exchange rates for a base currency from an external API.
 	//
-	// Returns a map where:
-	// - Keys are target currency codes (entity.CurrencyCode)
-	// - Values are exchange rates (*entity.ExchangeRate)
-	//
+	// Returns a slice of exchange rates for consistency with repository.GetByBase().
 	// All returned rates will have:
 	// - Stale flag set to false
 	// - Timestamp set to the current time or API-provided timestamp
@@ -61,9 +58,9 @@ type ExchangeRateProvider interface {
 	// - The response fails validation
 	// - The context is cancelled or times out
 	//
-	// Note: The map return type allows efficient lookups by target currency.
-	// If no rates are available, returns an empty map (not an error).
+	// If no rates are available, returns an empty slice (not an error).
+	// This is consistent with repository.GetByBase() behavior.
 	//
 	// Context cancellation: Returns error if ctx is cancelled or times out.
-	FetchAllRates(ctx context.Context, base entity.CurrencyCode) (map[entity.CurrencyCode]*entity.ExchangeRate, error)
+	FetchAllRates(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error)
 }

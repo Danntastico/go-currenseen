@@ -60,7 +60,7 @@ func (uc *GetExchangeRateUseCase) Execute(ctx context.Context, req dto.GetRateRe
 
 	// Check if base and target are the same
 	if base.Equal(target) {
-		return dto.RateResponse{}, entity.ErrCurrencyCodeMismatch
+		return dto.RateResponse{}, fmt.Errorf("currency code validation: %w", entity.ErrCurrencyCodeMismatch)
 	}
 
 	// Step 1: Check cache

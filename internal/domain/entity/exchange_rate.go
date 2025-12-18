@@ -2,6 +2,7 @@ package entity
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -54,8 +55,9 @@ func validateExchangeRate(base, target CurrencyCode, rate float64, timestamp tim
 		return fmt.Errorf("%w: base=%q, target=%q", ErrCurrencyCodeMismatch, base, target)
 	}
 
-	if rate <= 0 {
-		return fmt.Errorf("%w: rate must be positive, got %f", ErrInvalidExchangeRate, rate)
+	// Validate rate: must be positive, finite, and not NaN
+	if rate <= 0 || math.IsInf(rate, 0) || math.IsNaN(rate) {
+		return fmt.Errorf("%w: rate must be positive and finite, got %f", ErrInvalidExchangeRate, rate)
 	}
 
 	if timestamp.IsZero() {
