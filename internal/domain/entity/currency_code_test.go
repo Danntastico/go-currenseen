@@ -161,6 +161,24 @@ func TestCurrencyCode_Equal(t *testing.T) {
 			code2: CurrencyCode("EUR"),
 			want:  false,
 		},
+		{
+			name:  "empty string code1",
+			code1: CurrencyCode(""),
+			code2: CurrencyCode("USD"),
+			want:  false,
+		},
+		{
+			name:  "empty string code2",
+			code1: CurrencyCode("USD"),
+			code2: CurrencyCode(""),
+			want:  false,
+		},
+		{
+			name:  "both empty strings",
+			code1: CurrencyCode(""),
+			code2: CurrencyCode(""),
+			want:  true, // Empty strings are equal
+		},
 	}
 
 	for _, tt := range tests {
@@ -171,5 +189,3 @@ func TestCurrencyCode_Equal(t *testing.T) {
 		})
 	}
 }
-
-

@@ -352,9 +352,9 @@ return time.Now().After(expirationTime)
 - [x] Align return types between Repository and Provider ✅
 
 ### Priority 3 (Nice to Have)
-- [ ] Add edge case tests
-- [ ] Document ISO 4217 validation approach
-- [ ] Consider time abstraction for testing
+- [x] Add edge case tests ✅
+- [x] Document ISO 4217 validation approach ✅
+- [x] Consider time abstraction for testing ✅
 
 ---
 

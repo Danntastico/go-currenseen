@@ -53,6 +53,20 @@ func TestRateCalculator_Convert(t *testing.T) {
 			want:    0,
 			wantErr: true,
 		},
+		{
+			name:    "very large amount",
+			amount:  1e15, // 1 quadrillion
+			rate:    rate,
+			want:    8.5e14, // Should handle large numbers
+			wantErr: false,
+		},
+		{
+			name:    "very small amount",
+			amount:  0.0001,
+			rate:    rate,
+			want:    0.000085,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {

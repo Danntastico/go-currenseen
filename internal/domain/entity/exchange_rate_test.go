@@ -194,6 +194,12 @@ func TestExchangeRate_IsExpired(t *testing.T) {
 			ttl:       -1 * time.Hour,
 			want:      false,
 		},
+		{
+			name:      "very large TTL - should not expire",
+			timestamp: time.Now().Add(-1000 * time.Hour),
+			ttl:       10000 * time.Hour, // Very large TTL
+			want:      false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -213,21 +219,70 @@ func TestExchangeRate_IsExpired(t *testing.T) {
 func TestExchangeRate_Age(t *testing.T) {
 	base, _ := NewCurrencyCode("USD")
 	target, _ := NewCurrencyCode("EUR")
-	expectedAge := 2 * time.Hour
-	timestamp := time.Now().Add(-expectedAge)
 
-	rate, err := NewExchangeRate(base, target, 0.85, timestamp, false)
-	if err != nil {
-		t.Fatalf("NewExchangeRate() error = %v", err)
+	tests := []struct {
+		name        string
+		timestamp   time.Time
+		expectedAge time.Duration
+		tolerance   time.Duration
+	}{
+		{
+			name:        "normal age calculation",
+			timestamp:   time.Now().Add(-2 * time.Hour),
+			expectedAge: 2 * time.Hour,
+			tolerance:   5 * time.Second,
+		},
+		{
+			name:        "very old rate",
+			timestamp:   time.Now().Add(-100 * time.Hour),
+			expectedAge: 100 * time.Hour,
+			tolerance:   5 * time.Second,
+		},
+		{
+			name:        "recent rate",
+			timestamp:   time.Now().Add(-5 * time.Minute),
+			expectedAge: 5 * time.Minute,
+			tolerance:   5 * time.Second,
+		},
 	}
 
-	age := rate.Age()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rate, err := NewExchangeRate(base, target, 0.85, tt.timestamp, false)
+			if err != nil {
+				t.Fatalf("NewExchangeRate() error = %v", err)
+			}
 
-	// Allow tolerance for test execution time (tests should run quickly)
-	tolerance := 5 * time.Second
-	if age < expectedAge-tolerance || age > expectedAge+tolerance {
-		t.Errorf("ExchangeRate.Age() = %v, want approximately %v (within %v)", age, expectedAge, tolerance)
+			age := rate.Age()
+
+			// Allow tolerance for test execution time
+			if age < tt.expectedAge-tt.tolerance || age > tt.expectedAge+tt.tolerance {
+				t.Errorf("ExchangeRate.Age() = %v, want approximately %v (within %v)", age, tt.expectedAge, tt.tolerance)
+			}
+		})
 	}
+
+	// Edge case: future timestamp (shouldn't happen, but defensive)
+	// Note: This would fail validation in NewExchangeRate, so we test Age() directly
+	// by creating a rate with a future timestamp (if we bypass validation)
+	t.Run("future timestamp edge case", func(t *testing.T) {
+		// Create a rate struct directly to test Age() with future timestamp
+		// This tests defensive behavior even though NewExchangeRate would reject it
+		futureTimestamp := time.Now().Add(1 * time.Hour)
+		rate := &ExchangeRate{
+			Base:      base,
+			Target:    target,
+			Rate:      0.85,
+			Timestamp: futureTimestamp,
+			Stale:     false,
+		}
+
+		age := rate.Age()
+		// Age should be negative for future timestamps
+		if age >= 0 {
+			t.Errorf("ExchangeRate.Age() for future timestamp = %v, want negative value", age)
+		}
+	})
 }
 
 func TestExchangeRate_IsValid(t *testing.T) {
