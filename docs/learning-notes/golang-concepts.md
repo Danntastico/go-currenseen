@@ -463,3 +463,368 @@ FetchAllRates(ctx context.Context, base entity.CurrencyCode) (map[entity.Currenc
 
 ---
 
+## For Loops
+
+**Definition:** Go has one loop construct: `for`. It supports three forms: traditional C-style, range-based, and infinite.
+
+### 1. Traditional C-style For Loop
+
+**Syntax:** `for init; condition; post { }`
+
+**Example:**
+```go
+for i := 0; i < 10; i++ {
+    fmt.Println(i)
+}
+```
+
+**Components:**
+- **Init:** `i := 0` - executed once before first iteration
+- **Condition:** `i < 10` - checked before each iteration
+- **Post:** `i++` - executed after each iteration
+
+**All parts optional:**
+```go
+// Infinite loop (all parts omitted)
+for {
+    // break or return to exit
+}
+
+// While-style loop (init omitted)
+i := 0
+for i < 10 {
+    i++
+}
+```
+
+### 2. For-Range Loop (Most Common)
+
+**Syntax:** `for key, value := range collection { }`
+
+**Used for:** Slices, arrays, maps, strings, channels
+
+#### Range over Slices/Arrays
+
+**Full syntax:**
+```go
+// With index and value
+for i, rate := range rates {
+    // i is index (int)
+    // rate is *entity.ExchangeRate
+}
+
+// Ignore index (use blank identifier)
+for _, rate := range rates {
+    // rate is *entity.ExchangeRate
+    // _ discards the index
+}
+
+// Index only
+for i := range rates {
+    // i is index (int)
+}
+```
+
+**Example from codebase:**
+```go
+for _, rate := range rates {
+    if rate == nil {
+        continue
+    }
+    // Process rate
+}
+```
+
+#### Range over Maps
+
+**Full syntax:**
+```go
+// With key and value
+for key, rate := range ratesMap {
+    // key is CurrencyCode
+    // rate is *entity.ExchangeRate
+}
+
+// Ignore key (use blank identifier)
+for _, rate := range ratesMap {
+    // rate is *entity.ExchangeRate
+    // _ discards the key
+}
+
+// Key only
+for key := range ratesMap {
+    // key is CurrencyCode
+}
+```
+
+**Important:** Map iteration order is random (not guaranteed).
+
+#### Range over Strings
+
+```go
+// Returns rune (Unicode code point) and byte index
+for i, char := range "Hello" {
+    // i is byte index (int)
+    // char is rune (int32)
+}
+```
+
+#### Range over Channels
+
+```go
+for value := range channel {
+    // Receives values from channel until it's closed
+}
+```
+
+### 3. Infinite Loop
+
+**Syntax:** `for { }`
+
+**Example:**
+```go
+for {
+    // Loop forever
+    if condition {
+        break  // Exit loop
+    }
+}
+```
+
+### Special Considerations
+
+#### Blank Identifier (`_`)
+
+Use `_` to ignore values you don't need:
+
+```go
+// Ignore index
+for _, rate := range rates {
+    // Only use rate, not index
+}
+
+// Ignore value
+for key := range ratesMap {
+    // Only use key, not value
+}
+```
+
+#### Break and Continue
+
+**`break`** - Exits the loop immediately:
+```go
+for i, rate := range rates {
+    if rate == nil {
+        break  // Exit loop
+    }
+}
+```
+
+**`continue`** - Skips to next iteration:
+```go
+for _, rate := range rates {
+    if rate == nil {
+        continue  // Skip this iteration, go to next
+    }
+    // Process rate
+}
+```
+
+#### Modifying During Iteration
+
+**Slices/Arrays:**
+- Modifying values: ✅ Safe (modifies the element)
+- Modifying slice length: ⚠️ Can cause issues (use indices carefully)
+
+**Maps:**
+- Modifying values: ✅ Safe
+- Adding/deleting keys: ⚠️ Behavior is undefined (don't do it)
+
+**Safe pattern:**
+```go
+// Collect keys first, then modify
+keys := make([]CurrencyCode, 0, len(ratesMap))
+for key := range ratesMap {
+    keys = append(keys, key)
+}
+// Now safe to modify map using keys slice
+```
+
+#### Range Copies Values
+
+**Important:** Range creates copies of values, not references:
+
+```go
+// For value types
+for _, rate := range rates {
+    rate.Stale = true  // ❌ Doesn't modify original (rate is a copy)
+}
+
+// For pointer types
+for _, rate := range rates {
+    rate.Stale = true  // ✅ Modifies original (rate is pointer, copy of pointer still points to same struct)
+}
+```
+
+#### Performance Considerations
+
+1. **Pre-allocate slices when possible:**
+   ```go
+   result := make([]Type, 0, len(input))  // Capacity hint
+   for _, item := range input {
+       result = append(result, item)
+   }
+   ```
+
+2. **Use indices when you need to modify:**
+   ```go
+   for i := range items {
+       items[i].Field = value  // Direct modification
+   }
+   ```
+
+3. **Range is efficient** - no performance penalty vs traditional for loop
+
+### Summary
+- **Three forms:** Traditional (`for init; condition; post`), Range (`for key, value := range`), Infinite (`for {}`)
+- **Range works with:** Slices, arrays, maps, strings, channels
+- **Blank identifier:** Use `_` to ignore values you don't need
+- **Break/Continue:** Control flow within loops
+- **Range copies values:** Be careful with value types vs pointer types
+- **Modification:** Safe to modify values, unsafe to modify collection structure during iteration
+
+---
+
+## Struct Field Tags
+
+**Definition:** Struct field tags are metadata attached to struct fields using backticks. They provide instructions for encoding/decoding, validation, and other reflection-based operations.
+
+**Syntax:** `FieldName FieldType `tag:"value"` // Comment`
+
+**Example:**
+```go
+type GetRatesRequest struct {
+    Base string `json:"base"` // Base currency code (e.g., "USD")
+}
+```
+
+**Components:**
+1. **Field name:** `Base`
+2. **Field type:** `string`
+3. **Struct tag:** `` `json:"base"` `` (in backticks)
+4. **Comment:** `// Base currency code (e.g., "USD")`
+
+### JSON Tags
+
+**Purpose:** Control how struct fields are encoded/decoded to/from JSON.
+
+**Syntax:** `` `json:"field_name"` ``
+
+**Effect:**
+- **Encoding (Go → JSON):** Field `Base` becomes `"base"` in JSON
+- **Decoding (JSON → Go):** JSON field `"base"` maps to struct field `Base`
+
+**Example:**
+```go
+type GetRatesRequest struct {
+    Base string `json:"base"`
+}
+
+// Encoding (Go struct → JSON)
+req := GetRatesRequest{Base: "USD"}
+jsonBytes, _ := json.Marshal(req)
+// Result: {"base":"USD"}
+
+// Decoding (JSON → Go struct)
+jsonStr := `{"base":"EUR"}`
+var req GetRatesRequest
+json.Unmarshal([]byte(jsonStr), &req)
+// req.Base = "EUR"
+```
+
+**Common JSON tag options:**
+```go
+Field string `json:"field_name"`           // Custom JSON name
+Field string `json:"field_name,omitempty"` // Omit if empty
+Field string `json:"-"`                    // Ignore this field in JSON
+Field string `json:",omitempty"`          // Use field name, omit if empty
+```
+
+### Other Common Tags
+
+**XML tags:**
+```go
+Field string `xml:"field_name"`
+```
+
+**Database tags (GORM, etc.):**
+```go
+Field string `gorm:"column:field_name"`
+```
+
+**Validation tags:**
+```go
+Field string `validate:"required,min=3"`
+```
+
+**Multiple tags:**
+```go
+Field string `json:"field_name" xml:"field_name" validate:"required"`
+```
+
+### Tag Syntax Rules
+
+1. **Backticks required:** Tags must be in backticks (`` ` ``), not quotes
+2. **Space-separated:** Multiple tags separated by spaces
+3. **Key-value pairs:** Format is `key:"value"`
+4. **Quotes in values:** Values are typically quoted strings
+
+**Examples:**
+```go
+// ✅ Correct
+Field string `json:"name"`
+
+// ✅ Multiple tags
+Field string `json:"name" xml:"name" validate:"required"`
+
+// ✅ With options
+Field string `json:"name,omitempty"`
+
+// ❌ Wrong (quotes instead of backticks)
+Field string "json:\"name\""  // ERROR!
+
+// ❌ Wrong (no quotes in value)
+Field string `json:name`  // ERROR!
+```
+
+### Why Use Tags?
+
+1. **JSON/API serialization:** Control how structs convert to/from JSON
+2. **Naming conventions:** Map Go field names (PascalCase) to JSON (camelCase/snake_case)
+3. **Field control:** Omit fields, handle empty values, ignore fields
+4. **Validation:** Add validation rules for fields
+5. **Database mapping:** Map struct fields to database columns
+
+**Example from codebase:**
+```go
+type GetRateRequest struct {
+    Base   string `json:"base"`   // Base currency code (e.g., "USD")
+    Target string `json:"target"` // Target currency code (e.g., "EUR")
+}
+```
+
+**What this means:**
+- `Base` field → JSON `"base"` (lowercase)
+- `Target` field → JSON `"target"` (lowercase)
+- When API receives `{"base":"USD","target":"EUR"}`, it maps to struct fields
+
+### Summary
+- **Struct tags:** Metadata in backticks attached to struct fields
+- **Syntax:** `` `key:"value"` `` - must use backticks, not quotes
+- **JSON tags:** Control JSON encoding/decoding field names
+- **Purpose:** Map Go field names to external formats (JSON, XML, DB, etc.)
+- **Access:** Tags are accessed via reflection at runtime
+- **Multiple tags:** Space-separated tags in same backtick string
+
+---
+
