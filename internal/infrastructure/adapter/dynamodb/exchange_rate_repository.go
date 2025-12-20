@@ -302,3 +302,67 @@ func (r *DynamoDBRepository) GetByBase(ctx context.Context, base entity.Currency
 	// Return empty slice (not nil) per interface contract
 	return rates, nil
 }
+
+// Delete removes an exchange rate for a specific currency pair.
+//
+// This method:
+// - Builds the partition key from base and target currencies
+// - Uses DeleteItem operation to remove the item
+// - Returns entity.ErrRateNotFound if the rate doesn't exist
+// - Uses ReturnValues to check if item existed before deletion
+//
+// Context cancellation: Returns error if ctx is cancelled.
+func (r *DynamoDBRepository) Delete(ctx context.Context, base, target entity.CurrencyCode) error {
+	// Check context before starting operation
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Build partition key
+	pk := buildPartitionKey(base, target)
+
+	// Prepare DeleteItem input
+	input := &dynamodb.DeleteItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: pk},
+		},
+		ReturnValues: types.ReturnValueAllOld,
+	}
+
+	// Execute DeleteItem
+	result, err := r.client.DeleteItem(ctx, input)
+	if err != nil {
+		// Check for context cancellation
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		return fmt.Errorf("dynamodb delete item failed: %w", err)
+	}
+
+	// Check if item existed (ReturnValues returns attributes of deleted item)
+	if result.Attributes == nil {
+		return entity.ErrRateNotFound
+	}
+
+	return nil
+}
+
+// GetStale retrieves a stale (expired) exchange rate for fallback scenarios.
+//
+// This method:
+// - Is semantically the same as Get() for Phase 3
+// - Repository doesn't filter by TTL - use cases handle expiration validation
+// - Explicitly indicates the caller wants stale data for fallback purposes
+// - Returns entity.ErrRateNotFound if no rate exists (even if expired)
+//
+// Note: The distinction from Get() is semantic. Both methods return rates
+// regardless of TTL expiration. Use cases are responsible for checking expiration
+// using entity.ExchangeRate.IsExpired() or entity.ExchangeRate.IsValid().
+//
+// Context cancellation: Returns error if ctx is cancelled.
+func (r *DynamoDBRepository) GetStale(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
+	// For Phase 3, GetStale is the same as Get
+	// Repository doesn't filter by TTL - use cases handle expiration
+	return r.Get(ctx, base, target)
+}
