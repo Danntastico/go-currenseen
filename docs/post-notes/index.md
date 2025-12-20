@@ -12,3 +12,4 @@ In a production system, you might want to check which rates are missing/expired
 
 3. Check the dynamoDB conectivty in a production-like way
 
+4. in `internal\infrastructure\adapter\dynamodb\exchange_rate_repository_test.go`, we must cover method testing for the `Get`, `Save`, `Delete`, `GetByBase` and `GetStale`.
