@@ -243,3 +243,62 @@ func (r *DynamoDBRepository) Save(ctx context.Context, rate *entity.ExchangeRate
 
 	return nil
 }
+
+// GetByBase retrieves all exchange rates for a base currency.
+//
+// This method:
+// - Uses Query operation (not Scan) for efficiency
+// - Queries the GSI BaseCurrencyIndex by base currency
+// - Returns all rates for the specified base currency
+// - Returns empty slice (not nil) if no rates are found
+// - Returns rates regardless of TTL expiration (use cases handle expiration)
+//
+// Context cancellation: Returns error if ctx is cancelled.
+func (r *DynamoDBRepository) GetByBase(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
+	// Check context before starting operation
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	// Prepare Query input for GSI
+	input := &dynamodb.QueryInput{
+		TableName:              aws.String(r.tableName),
+		IndexName:              aws.String("BaseCurrencyIndex"),
+		KeyConditionExpression: aws.String("Base = :base"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":base": &types.AttributeValueMemberS{Value: base.String()},
+		},
+	}
+
+	// Execute Query
+	result, err := r.client.Query(ctx, input)
+	if err != nil {
+		// Check for context cancellation
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("dynamodb query failed: %w", err)
+	}
+
+	// Convert items to entities
+	// Pre-allocate slice with capacity for better performance
+	rates := make([]*entity.ExchangeRate, 0, len(result.Items))
+	for _, item := range result.Items {
+		// Unmarshal DynamoDB item to dynamoItem
+		dItem, err := unmarshalDynamoItem(item)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal dynamodb item: %w", err)
+		}
+
+		// Convert dynamoItem to domain entity
+		entity, err := dynamoItemToEntity(dItem)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert item to entity: %w", err)
+		}
+
+		rates = append(rates, entity)
+	}
+
+	// Return empty slice (not nil) per interface contract
+	return rates, nil
+}
