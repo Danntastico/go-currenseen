@@ -21,6 +21,23 @@ type DynamoDBRepository struct {
 	tableName string
 }
 
+// NewDynamoDBRepository creates a new DynamoDB repository.
+//
+// This constructor follows Go best practices and enables dependency injection.
+// The client can be a real DynamoDB client or a mock for testing.
+//
+// Parameters:
+//   - client: The DynamoDB client (can be real or mock)
+//   - tableName: The name of the DynamoDB table to use
+//
+// Returns a new DynamoDBRepository instance.
+func NewDynamoDBRepository(client *dynamodb.Client, tableName string) *DynamoDBRepository {
+	return &DynamoDBRepository{
+		client:    client,
+		tableName: tableName,
+	}
+}
+
 // dynamoItem represents a DynamoDB item structure.
 // This struct is used for marshaling/unmarshaling between Go and DynamoDB AttributeValue format.
 // The dynamodbav tags tell the AWS SDK how to map struct fields to DynamoDB attributes.
