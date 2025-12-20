@@ -39,10 +39,3 @@ func NewDynamoDBClient(ctx context.Context) (*dynamodb.Client, error) {
 	// Create DynamoDB client from configuration
 	return dynamodb.NewFromConfig(cfg), nil
 }
-
-// DynamoDBConfig holds configuration for DynamoDB repository.
-// This struct can be used to pass both client and table name together.
-type DynamoDBConfig struct {
-	TableName string
-	Client    *dynamodb.Client
-}

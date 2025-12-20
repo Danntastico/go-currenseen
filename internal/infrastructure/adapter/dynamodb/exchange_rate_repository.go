@@ -1,10 +1,14 @@
 package dynamodb
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/misterfancybg/go-currenseen/internal/domain/entity"
 )
@@ -12,6 +16,10 @@ import (
 // DynamoDBRepository implements the ExchangeRateRepository interface using AWS DynamoDB.
 // This is an adapter in the Hexagonal Architecture pattern, connecting the domain layer
 // to the AWS DynamoDB infrastructure.
+type DynamoDBRepository struct {
+	client    *dynamodb.Client
+	tableName string
+}
 
 // dynamoItem represents a DynamoDB item structure.
 // This struct is used for marshaling/unmarshaling between Go and DynamoDB AttributeValue format.
@@ -134,4 +142,55 @@ func unmarshalDynamoItem(av map[string]types.AttributeValue) (*dynamoItem, error
 	}
 
 	return &item, nil
+}
+
+// Get retrieves an exchange rate for a specific currency pair.
+//
+// This method:
+// - Builds the partition key from base and target currencies
+// - Uses GetItem for direct lookup by partition key
+// - Returns entity.ErrRateNotFound if the rate doesn't exist
+// - Returns rates regardless of TTL expiration (use cases handle expiration)
+//
+// Context cancellation: Returns error if ctx is cancelled.
+func (r *DynamoDBRepository) Get(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
+	// Check context before starting operation
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	// Build partition key
+	pk := buildPartitionKey(base, target)
+
+	// Prepare GetItem input
+	input := &dynamodb.GetItemInput{
+		TableName: aws.String(r.tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: pk},
+		},
+	}
+
+	// Execute GetItem
+	result, err := r.client.GetItem(ctx, input)
+	if err != nil {
+		// Check for context cancellation
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("dynamodb get item failed: %w", err)
+	}
+
+	// Check if item exists
+	if result.Item == nil {
+		return nil, entity.ErrRateNotFound
+	}
+
+	// Unmarshal DynamoDB item to dynamoItem
+	item, err := unmarshalDynamoItem(result.Item)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal dynamodb item: %w", err)
+	}
+
+	// Convert dynamoItem to domain entity
+	return dynamoItemToEntity(item)
 }
