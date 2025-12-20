@@ -161,6 +161,37 @@ func unmarshalDynamoItem(av map[string]types.AttributeValue) (*dynamoItem, error
 	return &item, nil
 }
 
+// mapDynamoDBError maps DynamoDB errors to domain errors or wraps them appropriately.
+//
+// This function:
+// - Preserves context cancellation errors (returns them as-is)
+// - Maps DynamoDB-specific errors to domain errors where appropriate
+// - Wraps other errors with context for debugging
+//
+// Note: Item not found is handled separately by checking result.Item == nil,
+// not through error mapping, as DynamoDB GetItem returns success with nil item.
+func mapDynamoDBError(err error, operation string) error {
+	if err == nil {
+		return nil
+	}
+
+	// Check for context cancellation - return as-is
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	// Check for DynamoDB resource not found (table/index doesn't exist)
+	var resourceNotFoundErr *types.ResourceNotFoundException
+	if errors.As(err, &resourceNotFoundErr) {
+		// This typically means table or index doesn't exist
+		// Return wrapped error with context
+		return fmt.Errorf("dynamodb resource not found (%s): %w", operation, err)
+	}
+
+	// For other errors, wrap with operation context
+	return fmt.Errorf("dynamodb %s failed: %w", operation, err)
+}
+
 // Get retrieves an exchange rate for a specific currency pair.
 //
 // This method:
@@ -190,11 +221,7 @@ func (r *DynamoDBRepository) Get(ctx context.Context, base, target entity.Curren
 	// Execute GetItem
 	result, err := r.client.GetItem(ctx, input)
 	if err != nil {
-		// Check for context cancellation
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("dynamodb get item failed: %w", err)
+		return nil, mapDynamoDBError(err, "get item")
 	}
 
 	// Check if item exists
@@ -251,11 +278,7 @@ func (r *DynamoDBRepository) Save(ctx context.Context, rate *entity.ExchangeRate
 	// Execute PutItem
 	_, err = r.client.PutItem(ctx, input)
 	if err != nil {
-		// Check for context cancellation
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
-		}
-		return fmt.Errorf("dynamodb put item failed: %w", err)
+		return mapDynamoDBError(err, "put item")
 	}
 
 	return nil
@@ -290,11 +313,7 @@ func (r *DynamoDBRepository) GetByBase(ctx context.Context, base entity.Currency
 	// Execute Query
 	result, err := r.client.Query(ctx, input)
 	if err != nil {
-		// Check for context cancellation
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("dynamodb query failed: %w", err)
+		return nil, mapDynamoDBError(err, "query")
 	}
 
 	// Convert items to entities
@@ -350,11 +369,7 @@ func (r *DynamoDBRepository) Delete(ctx context.Context, base, target entity.Cur
 	// Execute DeleteItem
 	result, err := r.client.DeleteItem(ctx, input)
 	if err != nil {
-		// Check for context cancellation
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
-		}
-		return fmt.Errorf("dynamodb delete item failed: %w", err)
+		return mapDynamoDBError(err, "delete item")
 	}
 
 	// Check if item existed (ReturnValues returns attributes of deleted item)
