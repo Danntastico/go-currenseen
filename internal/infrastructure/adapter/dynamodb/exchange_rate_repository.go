@@ -194,3 +194,52 @@ func (r *DynamoDBRepository) Get(ctx context.Context, base, target entity.Curren
 	// Convert dynamoItem to domain entity
 	return dynamoItemToEntity(item)
 }
+
+// Save stores an exchange rate with TTL.
+//
+// This method:
+// - Uses PutItem operation which creates or updates (upsert behavior)
+// - Converts domain entity to DynamoDB item format
+// - Calculates and stores TTL timestamp
+// - Marshals item to DynamoDB AttributeValue format
+//
+// If the rate already exists, it will be updated with new values.
+// The TTL is calculated from the current time plus the provided ttl duration.
+//
+// Context cancellation: Returns error if ctx is cancelled.
+func (r *DynamoDBRepository) Save(ctx context.Context, rate *entity.ExchangeRate, ttl time.Duration) error {
+	// Check context before starting operation
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// Convert entity to DynamoDB item (includes TTL calculation)
+	item, err := entityToDynamoItem(rate, ttl)
+	if err != nil {
+		return fmt.Errorf("failed to convert entity to dynamo item: %w", err)
+	}
+
+	// Marshal to DynamoDB AttributeValue map
+	av, err := marshalDynamoItem(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal dynamo item: %w", err)
+	}
+
+	// Prepare PutItem input (upsert behavior)
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(r.tableName),
+		Item:      av,
+	}
+
+	// Execute PutItem
+	_, err = r.client.PutItem(ctx, input)
+	if err != nil {
+		// Check for context cancellation
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		return fmt.Errorf("dynamodb put item failed: %w", err)
+	}
+
+	return nil
+}
