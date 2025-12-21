@@ -502,34 +502,60 @@ graph TB
 ```mermaid
 classDiagram
     class ExchangeRates {
-        +string PartitionKey
-        +string SortKey
-        +string BaseCurrency
-        +string TargetCurrency
-        +float Rate
-        +string UpdatedAt
-        +int TTL
-        +string Metadata
+        +string PK "Partition Key: RATE#{BASE}#{TARGET}"
+        +string Base "Base currency code (ISO 4217)"
+        +string Target "Target currency code (ISO 4217)"
+        +float Rate "Exchange rate value"
+        +number Timestamp "Unix timestamp (seconds)"
+        +boolean Stale "Stale flag"
+        +number ttl "TTL timestamp (Unix seconds)"
     }
+    
+    class BaseCurrencyIndex {
+        +string Base "GSI Partition Key"
+        +string PK "Original partition key"
+    }
+    
+    ExchangeRates ||--o{ BaseCurrencyIndex : "indexed by"
 ```
 
 **Table Schema Details:**
 - **Table Name**: `ExchangeRates`
-- **Partition Key**: `PartitionKey` (stores values like `RATE#USD#EUR`)
-- **Sort Key**: `SortKey` (optional, reserved for future use)
+- **Partition Key (PK)**: `PK` (stores values like `RATE#USD#EUR`)
+  - Format: `RATE#{BASE}#{TARGET}` (e.g., `RATE#USD#EUR`)
+  - Enables direct lookup for `Get()` and `Delete()` operations
+- **Sort Key**: None (Simple Primary Key)
+  - Not needed for Phase 3
+  - Can be added later for versioning or time-based ordering
 - **GSI**: `BaseCurrencyIndex` for querying all rates by base currency
-  - GSI Partition Key: `BaseCurrency`
-  - GSI Sort Key: `PartitionKey` (original partition key)
-- **TTL Attribute**: `TTL` (Unix epoch timestamp)
-- **Attributes**: `BaseCurrency`, `TargetCurrency`, `Rate`, `UpdatedAt`, `Metadata`
+  - GSI Partition Key: `Base` (String)
+  - GSI Sort Key: None
+  - Projection: ALL (all attributes projected to GSI)
+  - **Note**: `Base` is a DynamoDB reserved keyword, handled via `ExpressionAttributeNames` in queries
+- **TTL Attribute**: `ttl` (Number, Unix epoch timestamp in seconds)
+  - DynamoDB automatically deletes items when TTL expires
+  - TTL deletion is eventually consistent (may take up to 48 hours)
+- **Attributes**: `Base`, `Target`, `Rate`, `Timestamp`, `Stale`, `ttl`
 
 **Domain Entity Mapping:**
 The DynamoDB table stores data that maps to the `ExchangeRate` domain entity:
-- `PartitionKey` → Identifies the currency pair (format: `RATE#BASE#TARGET`)
-- `BaseCurrency` → Domain entity `Base` field
-- `TargetCurrency` → Domain entity `Target` field
-- `Rate` → Domain entity `Rate` field
-- `UpdatedAt` → Domain entity `Timestamp` field
+- `PK` → Identifies the currency pair (format: `RATE#BASE#TARGET`)
+- `Base` → Domain entity `Base` field (CurrencyCode)
+- `Target` → Domain entity `Target` field (CurrencyCode)
+- `Rate` → Domain entity `Rate` field (float64)
+- `Timestamp` → Domain entity `Timestamp` field (time.Time, stored as Unix seconds)
+- `Stale` → Domain entity `Stale` field (bool)
+- `ttl` → TTL for automatic expiration (calculated from `time.Now().Add(ttl).Unix()`)
+
+**Reserved Keyword Handling:**
+The `Base` attribute is a DynamoDB reserved keyword. The implementation uses `ExpressionAttributeNames` to escape it in queries:
+```go
+KeyConditionExpression: "#base = :base"
+ExpressionAttributeNames: map[string]string{
+    "#base": "Base", // Map placeholder to actual attribute name
+}
+```
+This follows AWS best practices for handling reserved keywords in DynamoDB expressions.
 
 ### IAM Permissions
 

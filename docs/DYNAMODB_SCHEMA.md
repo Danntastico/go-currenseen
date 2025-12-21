@@ -138,6 +138,7 @@ erDiagram
    - Enables efficient queries for all rates by base currency
    - Avoids expensive table scans
    - Projection: ALL to avoid additional GetItem calls
+   - **Reserved Keyword Handling**: `Base` is a DynamoDB reserved keyword, so queries use `ExpressionAttributeNames` to escape it (e.g., `#base = :base` with `{"#base": "Base"}`)
 
 3. **Separate Base/Target Attributes**:
    - Required for GSI (Base is GSI partition key)
@@ -151,5 +152,5 @@ erDiagram
 
 ---
 
-**Last Updated**: Phase 3 - Step 3.2  
-**Next**: Step 3.3 - Document Schema (this document)
+**Last Updated**: Phase 3 - Step 15  
+**Status**: Complete - All documentation updated
