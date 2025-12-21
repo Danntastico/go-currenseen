@@ -301,10 +301,14 @@ func (r *DynamoDBRepository) GetByBase(ctx context.Context, base entity.Currency
 	}
 
 	// Prepare Query input for GSI
+	// Note: "Base" is a reserved keyword in DynamoDB, so we use ExpressionAttributeNames
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(r.tableName),
 		IndexName:              aws.String("BaseCurrencyIndex"),
-		KeyConditionExpression: aws.String("Base = :base"),
+		KeyConditionExpression: aws.String("#base = :base"),
+		ExpressionAttributeNames: map[string]string{
+			"#base": "Base", // Map #base to the actual attribute name "Base"
+		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":base": &types.AttributeValueMemberS{Value: base.String()},
 		},
