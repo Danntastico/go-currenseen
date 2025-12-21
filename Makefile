@@ -56,9 +56,10 @@ test-unit: ## Run unit tests only
 	@echo "Running unit tests..."
 	@go test -v -race ./tests/unit/...
 
-test-integration: ## Run integration tests only
+test-integration: ## Run integration tests only (requires INTEGRATION_TESTS=true and -tags=integration)
 	@echo "Running integration tests..."
-	@go test -v -race ./tests/integration/...
+	@echo "Note: Set INTEGRATION_TESTS=true environment variable"
+	@go test -tags=integration -v -race ./tests/integration/...
 
 build: ## Build the Lambda binary
 	@echo "Building Lambda binary..."
