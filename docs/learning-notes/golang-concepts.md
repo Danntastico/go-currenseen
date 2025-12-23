@@ -1023,3 +1023,103 @@ default:
 
 ---
 
+## Defer
+
+**Definition:** `defer` schedules a function call to execute when the surrounding function returns, regardless of how it returns (normal return, panic, or early return).
+
+**Syntax:** `defer functionCall()`
+
+**Example:**
+```go
+resp, err := http.Get(url)
+if err != nil {
+    return err
+}
+defer resp.Body.Close()  // Always closes, even if function returns early
+```
+
+### Key Behaviors
+
+**1. LIFO execution (Last In, First Out):**
+```go
+defer fmt.Println("A")
+defer fmt.Println("B")
+defer fmt.Println("C")
+// Executes: C, B, A (reverse order)
+```
+
+**2. Arguments evaluated immediately:**
+```go
+i := 0
+defer fmt.Println(i)  // Prints 0 (evaluated now, not later)
+i++
+// Function returns, defer executes: prints 0
+```
+
+**3. Always executes, even on panic:**
+```go
+defer fmt.Println("Cleanup")  // Still executes!
+panic("something went wrong")
+```
+
+**4. Can modify named return values:**
+```go
+func example() (result int) {
+    defer func() {
+        result = 42  // Modifies named return
+    }()
+    return 0  // Actually returns 42!
+}
+```
+
+### Common Use Cases
+
+**Resource cleanup:**
+```go
+file, err := os.Open("data.txt")
+if err != nil {
+    return err
+}
+defer file.Close()  // Always closes
+```
+
+**Unlocking mutexes:**
+```go
+mu.Lock()
+defer mu.Unlock()  // Always unlocks, even if function panics
+```
+
+**Context cancellation:**
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()  // Always cancels to free resources
+```
+
+**HTTP response closing:**
+```go
+resp, err := http.Get(url)
+defer resp.Body.Close()  // Always closes response body
+```
+
+### When to Use
+
+- ✅ Closing resources (files, HTTP responses, connections)
+- ✅ Unlocking mutexes
+- ✅ Recovering from panics
+- ✅ Cleanup operations
+
+### When NOT to Use
+
+- ❌ In loops (can cause resource leaks - defer executes at end of function, not loop iteration)
+- ❌ For performance-critical code (small overhead)
+
+### Summary
+- **Purpose:** Schedule cleanup to run when function returns
+- **Execution:** Runs in reverse order (LIFO) when function exits
+- **Always runs:** Even on panic or early return
+- **Arguments:** Evaluated immediately, execution deferred
+- **Common use:** Resource cleanup (close files, unlock mutexes, cancel contexts)
+- **Pattern:** `defer resource.Close()` right after acquiring resource
+
+---
+
