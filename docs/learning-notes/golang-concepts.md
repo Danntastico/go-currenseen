@@ -828,3 +828,198 @@ type GetRateRequest struct {
 
 ---
 
+## Context.Context
+
+**Definition:** `context.Context` is an interface that carries request-scoped values, cancellation signals, and deadlines across API boundaries and between goroutines.
+
+### What Context Does
+
+1. **Cancellation:** Signals when an operation should stop
+2. **Timeouts:** Sets deadlines for operations
+3. **Request-scoped values:** Carries key-value data through call chain
+4. **Propagation:** Passes cancellation/timeouts through function calls
+
+### Why It's Relevant
+
+1. **Prevents resource leaks:** Cancels long-running operations
+2. **Timeout control:** Enforces maximum execution time
+3. **Graceful shutdown:** Stops operations cleanly
+4. **Request tracing:** Carries request IDs and metadata
+5. **Standard pattern:** Idiomatic in Go for async operations
+
+### Example from Codebase
+
+```go
+func (p *CurrencyAPIProvider) FetchRate(ctx context.Context, base, target CurrencyCode) (*ExchangeRate, error) {
+    // Check context before starting operation
+    if ctx.Err() != nil {
+        return nil, ctx.Err()
+    }
+    
+    // Create request with context (enables cancellation and timeout)
+    req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+    // HTTP request respects context timeout/cancellation
+}
+```
+
+### Creating Contexts
+
+**1. Background context (root):**
+```go
+ctx := context.Background()  // Never cancelled, no deadline
+```
+
+**2. TODO context (placeholder):**
+```go
+ctx := context.TODO()  // Use when unsure which context to use
+```
+
+**3. With cancellation:**
+```go
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()  // Always call cancel to free resources
+
+// Later, cancel the operation:
+cancel()  // Signals all operations using this context to stop
+```
+
+**4. With timeout:**
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()  // Always call cancel
+
+// Context automatically cancels after 5 seconds
+```
+
+**5. With deadline:**
+```go
+deadline := time.Now().Add(10 * time.Second)
+ctx, cancel := context.WithDeadline(context.Background(), deadline)
+defer cancel()
+```
+
+**6. With values:**
+```go
+ctx := context.WithValue(context.Background(), "requestID", "abc123")
+// Later retrieve:
+requestID := ctx.Value("requestID").(string)
+```
+
+### Common Patterns
+
+**1. Check cancellation before operations:**
+```go
+if ctx.Err() != nil {
+    return nil, ctx.Err()
+}
+```
+
+**2. Pass context to functions (first parameter):**
+```go
+func FetchRate(ctx context.Context, ...) (*ExchangeRate, error) {
+    // ctx is first parameter (Go convention)
+}
+```
+
+**3. Use with HTTP requests:**
+```go
+req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+resp, err := client.Do(req)  // Respects context timeout/cancellation
+```
+
+**4. Use with database operations:**
+```go
+result, err := db.QueryContext(ctx, "SELECT ...")
+// DynamoDB, SQL, etc. all support context
+```
+
+**5. Chain contexts:**
+```go
+// Parent context with timeout
+parentCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+
+// Child context with shorter timeout
+childCtx, cancel := context.WithTimeout(parentCtx, 5*time.Second)
+defer cancel()
+```
+
+### Context Propagation
+
+**Example call chain:**
+```go
+// Handler receives context
+func Handler(ctx context.Context, event Event) {
+    // Pass context down
+    result, err := useCase.Execute(ctx, req)
+}
+
+// Use case passes to repository
+func (uc *UseCase) Execute(ctx context.Context, req Request) {
+    rate, err := uc.repository.Get(ctx, base, target)
+}
+
+// Repository passes to HTTP client
+func (r *Repository) Get(ctx context.Context, ...) {
+    resp, err := httpClient.Do(req.WithContext(ctx))
+}
+```
+
+**Key point:** Context flows down the call chain. If cancelled at the top, all downstream operations are cancelled.
+
+### Context Rules
+
+1. **First parameter:** `context.Context` should be the first parameter
+2. **Don't store in structs:** Pass as parameter, don't embed
+3. **Don't pass nil:** Use `context.Background()` or `context.TODO()` if needed
+4. **Always check:** Check `ctx.Err()` before long operations
+5. **Always cancel:** Call `cancel()` from `WithCancel/WithTimeout` to free resources
+6. **Immutable:** Contexts are immutable, create new ones with `With*` functions
+
+### Context Errors
+
+```go
+// Check if context is done
+if ctx.Err() != nil {
+    // ctx.Err() returns:
+    // - context.Canceled (if cancelled)
+    // - context.DeadlineExceeded (if timed out)
+    // - nil (if still active)
+    return nil, ctx.Err()
+}
+
+// Or use select
+select {
+case <-ctx.Done():
+    return nil, ctx.Err()
+default:
+    // Continue operation
+}
+```
+
+### When to Use Context
+
+- ✅ HTTP requests (timeouts, cancellation)
+- ✅ Database operations (query timeouts)
+- ✅ External API calls (prevent hanging)
+- ✅ Long-running operations (graceful shutdown)
+- ✅ Goroutines (cancellation propagation)
+- ✅ Request tracing (carry metadata)
+
+### When NOT to Use Context
+
+- ❌ Internal utility functions (unless needed for cancellation)
+- ❌ Synchronous operations that are always fast
+- ❌ Functions that don't need cancellation/timeouts
+
+### Summary
+- **Purpose:** Cancellation, timeouts, request-scoped values
+- **First parameter:** Always first parameter in function signatures
+- **Propagation:** Flows down call chain automatically
+- **Cancellation:** Check `ctx.Err()` before operations
+- **Timeouts:** Use `WithTimeout` to set deadlines
+- **Always cancel:** Call `cancel()` from `WithCancel/WithTimeout`
+- **Immutable:** Create new contexts with `With*` functions
+
+---
+
