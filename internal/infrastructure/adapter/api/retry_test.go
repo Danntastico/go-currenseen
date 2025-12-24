@@ -140,28 +140,7 @@ func TestCalculateBackoff(t *testing.T) {
 	}
 }
 
-// mockProvider is a mock implementation of ExchangeRateProvider for testing
-type mockProvider struct {
-	fetchRateFunc     func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error)
-	fetchAllRatesFunc func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error)
-	callCount         int
-}
-
-func (m *mockProvider) FetchRate(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
-	m.callCount++
-	if m.fetchRateFunc != nil {
-		return m.fetchRateFunc(ctx, base, target)
-	}
-	return nil, errors.New("not implemented")
-}
-
-func (m *mockProvider) FetchAllRates(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
-	m.callCount++
-	if m.fetchAllRatesFunc != nil {
-		return m.fetchAllRatesFunc(ctx, base)
-	}
-	return nil, errors.New("not implemented")
-}
+// mockProvider is defined in test_helpers.go
 
 func TestRetryableFetchRate_Success(t *testing.T) {
 	base, _ := entity.NewCurrencyCode("USD")
