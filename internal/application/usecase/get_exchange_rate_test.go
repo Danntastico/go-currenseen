@@ -3,11 +3,13 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/misterfancybg/go-currenseen/internal/application/dto"
 	"github.com/misterfancybg/go-currenseen/internal/domain/entity"
+	"github.com/misterfancybg/go-currenseen/pkg/circuitbreaker"
 )
 
 // mockRepository is a mock implementation of ExchangeRateRepository for testing.
@@ -82,13 +84,14 @@ func TestGetExchangeRateUseCase_Execute(t *testing.T) {
 	expiredTimestamp := time.Now().Add(-2 * time.Hour)  // 2 hours ago, expired
 
 	tests := []struct {
-		name           string
-		request        dto.GetRateRequest
-		repoGetFunc    func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error)
-		providerFunc   func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error)
-		wantErr        bool
-		wantStale      bool
-		validateResult func(t *testing.T, resp dto.RateResponse)
+		name             string
+		request          dto.GetRateRequest
+		repoGetFunc      func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error)
+		repoGetStaleFunc func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error)
+		providerFunc     func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error)
+		wantErr          bool
+		wantStale        bool
+		validateResult   func(t *testing.T, resp dto.RateResponse)
 	}{
 		{
 			name:    "cache hit - valid rate",
@@ -97,8 +100,9 @@ func TestGetExchangeRateUseCase_Execute(t *testing.T) {
 				rate, _ := entity.NewExchangeRate(base, target, 0.85, validTimestamp, false)
 				return rate, nil
 			},
-			wantErr:   false,
-			wantStale: false,
+			repoGetStaleFunc: nil,
+			wantErr:          false,
+			wantStale:        false,
 			validateResult: func(t *testing.T, resp dto.RateResponse) {
 				if resp.Rate != 0.85 {
 					t.Errorf("expected rate 0.85, got %f", resp.Rate)
@@ -114,6 +118,7 @@ func TestGetExchangeRateUseCase_Execute(t *testing.T) {
 			repoGetFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
 				return nil, entity.ErrRateNotFound
 			},
+			repoGetStaleFunc: nil,
 			providerFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
 				rate, _ := entity.NewExchangeRate(base, target, 0.86, time.Now(), false)
 				return rate, nil
@@ -133,6 +138,7 @@ func TestGetExchangeRateUseCase_Execute(t *testing.T) {
 				rate, _ := entity.NewExchangeRate(base, target, 0.85, expiredTimestamp, false)
 				return rate, nil
 			},
+			repoGetStaleFunc: nil,
 			providerFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
 				rate, _ := entity.NewExchangeRate(base, target, 0.87, time.Now(), false)
 				return rate, nil
@@ -152,6 +158,7 @@ func TestGetExchangeRateUseCase_Execute(t *testing.T) {
 				rate, _ := entity.NewExchangeRate(base, target, 0.85, expiredTimestamp, false)
 				return rate, nil
 			},
+			repoGetStaleFunc: nil,
 			providerFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
 				return nil, errors.New("provider unavailable")
 			},
@@ -167,18 +174,66 @@ func TestGetExchangeRateUseCase_Execute(t *testing.T) {
 			},
 		},
 		{
-			name:    "invalid base currency",
-			request: dto.GetRateRequest{Base: "XX", Target: "EUR"},
-			wantErr: true,
+			name:             "invalid base currency",
+			request:          dto.GetRateRequest{Base: "XX", Target: "EUR"},
+			repoGetFunc:      nil,
+			repoGetStaleFunc: nil,
+			providerFunc:     nil,
+			wantErr:          true,
 		},
 		{
-			name:    "invalid target currency",
-			request: dto.GetRateRequest{Base: "USD", Target: "YY"},
-			wantErr: true,
+			name:             "invalid target currency",
+			request:          dto.GetRateRequest{Base: "USD", Target: "YY"},
+			repoGetFunc:      nil,
+			repoGetStaleFunc: nil,
+			providerFunc:     nil,
+			wantErr:          true,
 		},
 		{
-			name:    "same base and target",
-			request: dto.GetRateRequest{Base: "USD", Target: "USD"},
+			name:             "same base and target",
+			request:          dto.GetRateRequest{Base: "USD", Target: "USD"},
+			repoGetFunc:      nil,
+			repoGetStaleFunc: nil,
+			providerFunc:     nil,
+			wantErr:          true,
+		},
+		{
+			name:    "circuit open - fallback to stale cache",
+			request: dto.GetRateRequest{Base: "USD", Target: "EUR"},
+			repoGetFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
+				rate, _ := entity.NewExchangeRate(base, target, 0.85, expiredTimestamp, false)
+				return rate, nil
+			},
+			repoGetStaleFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
+				rate, _ := entity.NewExchangeRate(base, target, 0.85, expiredTimestamp, false)
+				return rate, nil
+			},
+			providerFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
+				return nil, fmt.Errorf("%w: external API unavailable", circuitbreaker.ErrCircuitOpen)
+			},
+			wantErr:   false,
+			wantStale: true,
+			validateResult: func(t *testing.T, resp dto.RateResponse) {
+				if resp.Rate != 0.85 {
+					t.Errorf("expected rate 0.85, got %f", resp.Rate)
+				}
+				if !resp.Stale {
+					t.Error("expected rate to be stale")
+				}
+			},
+		},
+		{
+			name:    "circuit open - no stale cache",
+			request: dto.GetRateRequest{Base: "USD", Target: "EUR"},
+			repoGetFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
+				return nil, entity.ErrRateNotFound
+			},
+			repoGetStaleFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
+				return nil, entity.ErrRateNotFound
+			},
+			providerFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
+				return nil, fmt.Errorf("%w: external API unavailable", circuitbreaker.ErrCircuitOpen)
+			},
 			wantErr: true,
 		},
 		{
@@ -187,6 +242,7 @@ func TestGetExchangeRateUseCase_Execute(t *testing.T) {
 			repoGetFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
 				return nil, entity.ErrRateNotFound
 			},
+			repoGetStaleFunc: nil,
 			providerFunc: func(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
 				return nil, errors.New("provider unavailable")
 			},
@@ -197,7 +253,8 @@ func TestGetExchangeRateUseCase_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &mockRepository{
-				getFunc: tt.repoGetFunc,
+				getFunc:      tt.repoGetFunc,
+				getStaleFunc: tt.repoGetStaleFunc,
 			}
 			prov := &mockProvider{
 				fetchRateFunc: tt.providerFunc,

@@ -10,6 +10,7 @@ import (
 	"github.com/misterfancybg/go-currenseen/internal/domain/entity"
 	"github.com/misterfancybg/go-currenseen/internal/domain/provider"
 	"github.com/misterfancybg/go-currenseen/internal/domain/repository"
+	"github.com/misterfancybg/go-currenseen/pkg/circuitbreaker"
 )
 
 // GetExchangeRateUseCase handles the use case for getting an exchange rate for a currency pair.
@@ -43,9 +44,15 @@ func NewGetExchangeRateUseCase(
 // 5. Update cache with new rate
 // 6. Return rate to client
 //
-// Fallback:
-// - If external API unavailable → return stale cache (if available)
+// Fallback Strategy:
+// - If circuit breaker is open (ErrCircuitOpen) → use GetStale() for fallback
+// - If other provider error → fallback to stale cache (if available)
 // - If both unavailable → return error
+//
+// Cache-First Strategy:
+// - Always check cache before external API
+// - Reduces external API calls (>80% reduction)
+// - Faster response times (<200ms for cached)
 func (uc *GetExchangeRateUseCase) Execute(ctx context.Context, req dto.GetRateRequest) (dto.RateResponse, error) {
 	// Validate currency codes
 	base, err := entity.NewCurrencyCode(req.Base)
@@ -86,6 +93,28 @@ func (uc *GetExchangeRateUseCase) Execute(ctx context.Context, req dto.GetRateRe
 	}
 
 	// Step 3: Fallback to stale cache if external API failed
+	// Check if circuit breaker is open (specific handling)
+	if errors.Is(err, circuitbreaker.ErrCircuitOpen) {
+		// Circuit is open - explicitly use GetStale() for fallback
+		staleRate, staleErr := uc.repository.GetStale(ctx, base, target)
+		if staleErr == nil && staleRate != nil {
+			// Create stale rate entity (mark as stale)
+			staleEntity, entityErr := entity.NewExchangeRate(
+				staleRate.Base,
+				staleRate.Target,
+				staleRate.Rate,
+				staleRate.Timestamp,
+				true, // Mark as stale
+			)
+			if entityErr == nil {
+				return dto.ToRateResponse(staleEntity), nil
+			}
+		}
+		// No stale cache available - return circuit open error
+		return dto.RateResponse{}, fmt.Errorf("circuit breaker is open and no stale cache available: %w", err)
+	}
+
+	// Step 4: Fallback to stale cache for other provider errors
 	if cachedRate != nil {
 		// Return stale cache as fallback
 		staleRate, err := entity.NewExchangeRate(

@@ -3,11 +3,13 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/misterfancybg/go-currenseen/internal/application/dto"
 	"github.com/misterfancybg/go-currenseen/internal/domain/entity"
+	"github.com/misterfancybg/go-currenseen/pkg/circuitbreaker"
 )
 
 func TestGetAllRatesUseCase_Execute(t *testing.T) {
@@ -89,6 +91,38 @@ func TestGetAllRatesUseCase_Execute(t *testing.T) {
 		{
 			name:    "invalid base currency",
 			request: dto.GetRatesRequest{Base: "XX"},
+			wantErr: true,
+		},
+		{
+			name:    "circuit open - fallback to stale cache",
+			request: dto.GetRatesRequest{Base: "USD"},
+			repoGetByBaseFunc: func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
+				rate1, _ := entity.NewExchangeRate(base, eur, 0.85, time.Now().Add(-2*time.Hour), false)
+				return []*entity.ExchangeRate{rate1}, nil
+			},
+			providerFunc: func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
+				return nil, fmt.Errorf("%w: external API unavailable", circuitbreaker.ErrCircuitOpen)
+			},
+			wantErr:   false,
+			wantStale: true,
+			validateResult: func(t *testing.T, resp dto.RatesResponse) {
+				if len(resp.Rates) == 0 {
+					t.Error("expected at least one stale rate")
+				}
+				if !resp.Stale {
+					t.Error("expected response to be stale")
+				}
+			},
+		},
+		{
+			name:    "circuit open - no stale cache",
+			request: dto.GetRatesRequest{Base: "USD"},
+			repoGetByBaseFunc: func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
+				return []*entity.ExchangeRate{}, nil
+			},
+			providerFunc: func(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
+				return nil, fmt.Errorf("%w: external API unavailable", circuitbreaker.ErrCircuitOpen)
+			},
 			wantErr: true,
 		},
 		{

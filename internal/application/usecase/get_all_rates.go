@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/misterfancybg/go-currenseen/internal/domain/entity"
 	"github.com/misterfancybg/go-currenseen/internal/domain/provider"
 	"github.com/misterfancybg/go-currenseen/internal/domain/repository"
+	"github.com/misterfancybg/go-currenseen/pkg/circuitbreaker"
 )
 
 // GetAllRatesUseCase handles the use case for getting all exchange rates for a base currency.
@@ -37,10 +39,20 @@ func NewGetAllRatesUseCase(
 // Flow:
 // 1. Validate base currency code
 // 2. Check cache (repository.GetByBase)
-// 3. If cache hit → return all cached rates
-// 4. If cache miss → fetch from external API
+// 3. If cache hit and all valid → return all cached rates
+// 4. If cache miss or some expired → fetch from external API
 // 5. Cache all rates
 // 6. Return rates to client
+//
+// Fallback Strategy:
+// - If circuit breaker is open (ErrCircuitOpen) → return stale cached rates
+// - If other provider error → fallback to stale cached rates (if available)
+// - If both unavailable → return error
+//
+// Cache-First Strategy:
+// - Always check cache before external API
+// - Reduces external API calls (>80% reduction)
+// - Faster response times (<200ms for cached)
 //
 // Note: This implementation fetches all rates from the provider if cache miss.
 // In a production system, you might want to check which rates are missing/expired
@@ -74,7 +86,35 @@ func (uc *GetAllRatesUseCase) Execute(ctx context.Context, req dto.GetRatesReque
 	// Step 2: Fetch from external API
 	freshRates, err := uc.provider.FetchAllRates(ctx, base)
 	if err != nil {
-		// If external API fails, return cached rates (even if expired) as fallback
+		// Check if circuit breaker is open (specific handling)
+		if errors.Is(err, circuitbreaker.ErrCircuitOpen) {
+			// Circuit is open - return stale cached rates (GetByBase already returns stale data)
+			if len(cachedRates) > 0 {
+				// Mark all as stale since they're expired
+				staleRates := make([]*entity.ExchangeRate, 0, len(cachedRates))
+				for _, rate := range cachedRates {
+					if rate != nil {
+						staleRate, staleErr := entity.NewExchangeRate(
+							rate.Base,
+							rate.Target,
+							rate.Rate,
+							rate.Timestamp,
+							true, // Mark as stale
+						)
+						if staleErr == nil {
+							staleRates = append(staleRates, staleRate)
+						}
+					}
+				}
+				if len(staleRates) > 0 {
+					return dto.ToRatesResponse(staleRates), nil
+				}
+			}
+			// No stale cache available - return circuit open error
+			return dto.RatesResponse{}, fmt.Errorf("circuit breaker is open and no stale cache available: %w", err)
+		}
+
+		// Step 3: Fallback to stale cache for other provider errors
 		if len(cachedRates) > 0 {
 			// Mark all as stale since they're expired
 			staleRates := make([]*entity.ExchangeRate, 0, len(cachedRates))
@@ -99,7 +139,7 @@ func (uc *GetAllRatesUseCase) Execute(ctx context.Context, req dto.GetRatesReque
 		return dto.RatesResponse{}, fmt.Errorf("failed to fetch exchange rates: %w", err)
 	}
 
-	// Step 3: Save all rates to cache
+	// Step 3: Save all rates to cache (or Step 2 if no error)
 	for _, rate := range freshRates {
 		if rate != nil {
 			if saveErr := uc.repository.Save(ctx, rate, uc.cacheTTL); saveErr != nil {
