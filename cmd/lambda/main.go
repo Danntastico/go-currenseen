@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -27,26 +25,20 @@ var (
 // initDependencies initializes all dependencies for Lambda handlers.
 //
 // This function:
+// - Loads unified configuration
 // - Creates DynamoDB client and repository
 // - Creates HTTP client and API provider
 // - Creates circuit breaker and wraps provider
 // - Creates use cases with all dependencies
+// - Optionally initializes Secrets Manager for API keys
 //
 // Dependencies are initialized once during Lambda cold start and reused
 // across invocations for better performance.
 func initDependencies(ctx context.Context) error {
-	// Load configuration
-	tableName := os.Getenv("TABLE_NAME")
-	if tableName == "" {
-		return fmt.Errorf("TABLE_NAME environment variable is required")
-	}
-
-	// Cache TTL from environment (default: 1 hour)
-	cacheTTL := 1 * time.Hour
-	if ttlStr := os.Getenv("CACHE_TTL"); ttlStr != "" {
-		if parsed, err := time.ParseDuration(ttlStr); err == nil && parsed > 0 {
-			cacheTTL = parsed
-		}
+	// Load unified configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	// 1. Initialize DynamoDB repository
@@ -55,18 +47,16 @@ func initDependencies(ctx context.Context) error {
 		return fmt.Errorf("failed to create DynamoDB client: %w", err)
 	}
 
-	repository := dynamodb.NewDynamoDBRepository(dynamoClient, tableName)
+	repository := dynamodb.NewDynamoDBRepository(dynamoClient, cfg.DynamoDB.TableName)
 
 	// 2. Initialize API provider with circuit breaker
-	apiConfig := config.LoadAPIConfig()
 	httpClient := api.NewHTTPClient()
 
 	// Create base provider
-	baseProvider := api.NewCurrencyAPIProvider(httpClient, apiConfig.BaseURL)
+	baseProvider := api.NewCurrencyAPIProvider(httpClient, cfg.API.BaseURL)
 
 	// Create circuit breaker
-	circuitBreakerConfig := config.LoadCircuitBreakerConfig()
-	circuitBreaker, err := circuitbreaker.NewCircuitBreaker(circuitBreakerConfig)
+	circuitBreaker, err := circuitbreaker.NewCircuitBreaker(cfg.CircuitBreaker)
 	if err != nil {
 		return fmt.Errorf("failed to create circuit breaker: %w", err)
 	}
@@ -75,8 +65,8 @@ func initDependencies(ctx context.Context) error {
 	provider := api.NewCircuitBreakerProvider(baseProvider, circuitBreaker)
 
 	// 3. Initialize use cases
-	getRateUseCase := usecase.NewGetExchangeRateUseCase(repository, provider, cacheTTL)
-	getAllRatesUseCase := usecase.NewGetAllRatesUseCase(repository, provider, cacheTTL)
+	getRateUseCase := usecase.NewGetExchangeRateUseCase(repository, provider, cfg.Cache.TTL)
+	getAllRatesUseCase := usecase.NewGetAllRatesUseCase(repository, provider, cfg.Cache.TTL)
 	healthCheckUseCase := usecase.NewHealthCheckUseCase(repository)
 
 	// 4. Create handler dependencies
