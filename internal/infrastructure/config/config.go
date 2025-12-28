@@ -51,7 +51,7 @@ type SecretsManagerConfig struct {
 // - TABLE_NAME: DynamoDB table name (required)
 // - AWS_REGION: AWS region (optional)
 // - CACHE_TTL: Cache TTL as duration string (default: "1h")
-// - EXCHANGE_RATE_API_URL: Base URL for the API (default: "https://api.fawazahmed0.currency-api.com/v1")
+// - EXCHANGE_RATE_API_URL: Base URL for the API (default: "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1")
 // - EXCHANGE_RATE_API_TIMEOUT: HTTP client timeout in seconds (default: 10)
 // - EXCHANGE_RATE_API_RETRY_ATTEMPTS: Maximum retry attempts (default: 3)
 // - CIRCUIT_BREAKER_FAILURE_THRESHOLD: Number of failures before opening (default: 5)

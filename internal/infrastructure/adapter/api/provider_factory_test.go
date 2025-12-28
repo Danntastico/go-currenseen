@@ -56,7 +56,7 @@ func TestNewProvider_CurrencyAPI_DefaultBaseURL(t *testing.T) {
 	}
 
 	// Verify default base URL is set
-	expectedURL := "https://api.fawazahmed0.currency-api.com/v1"
+	expectedURL := "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1"
 	if currencyProvider.baseURL != expectedURL {
 		t.Errorf("baseURL = %q, want %q", currencyProvider.baseURL, expectedURL)
 	}
@@ -98,7 +98,7 @@ func TestNewDefaultProvider(t *testing.T) {
 	}
 
 	// Verify default base URL is set
-	expectedURL := "https://api.fawazahmed0.currency-api.com/v1"
+	expectedURL := "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1"
 	if currencyProvider.baseURL != expectedURL {
 		t.Errorf("baseURL = %q, want %q", currencyProvider.baseURL, expectedURL)
 	}

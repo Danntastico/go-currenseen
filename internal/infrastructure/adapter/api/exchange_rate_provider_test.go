@@ -36,7 +36,7 @@ func TestNewCurrencyAPIProvider_DefaultBaseURL(t *testing.T) {
 
 	provider := NewCurrencyAPIProvider(client, "")
 
-	expectedURL := "https://api.fawazahmed0.currency-api.com/v1"
+	expectedURL := "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1"
 	if provider.baseURL != expectedURL {
 		t.Errorf("baseURL = %q, want %q", provider.baseURL, expectedURL)
 	}
@@ -45,16 +45,17 @@ func TestNewCurrencyAPIProvider_DefaultBaseURL(t *testing.T) {
 func TestCurrencyAPIProvider_FetchRate_Success(t *testing.T) {
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/latest" {
+		// New API format: /currencies/{base}.json
+		if r.URL.Path != "/currencies/usd.json" {
 			t.Errorf("Unexpected path: %s", r.URL.Path)
 		}
 
-		response := currencyAPIResponse{
-			Date: "2024-01-15",
-			Base: "USD",
-			Rates: map[string]float64{
-				"EUR": 0.85,
-				"GBP": 0.75,
+		// New API response format: rates nested under base currency (lowercase)
+		response := map[string]interface{}{
+			"date": "2024-01-15",
+			"usd": map[string]float64{
+				"eur": 0.85,
+				"gbp": 0.75,
 			},
 		}
 
@@ -205,13 +206,18 @@ func TestCurrencyAPIProvider_FetchRate_ContextTimeout(t *testing.T) {
 func TestCurrencyAPIProvider_FetchAllRates_Success(t *testing.T) {
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := currencyAPIResponse{
-			Date: "2024-01-15",
-			Base: "USD",
-			Rates: map[string]float64{
-				"EUR": 0.85,
-				"GBP": 0.75,
-				"JPY": 110.50,
+		// New API format: /currencies/{base}.json
+		if r.URL.Path != "/currencies/usd.json" {
+			t.Errorf("Unexpected path: %s", r.URL.Path)
+		}
+
+		// New API response format
+		response := map[string]interface{}{
+			"date": "2024-01-15",
+			"usd": map[string]float64{
+				"eur": 0.85,
+				"gbp": 0.75,
+				"jpy": 110.50,
 			},
 		}
 
@@ -252,10 +258,10 @@ func TestCurrencyAPIProvider_FetchAllRates_Success(t *testing.T) {
 func TestCurrencyAPIProvider_FetchAllRates_EmptyRates(t *testing.T) {
 	// Create mock server that returns empty rates
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := currencyAPIResponse{
-			Date:  "2024-01-15",
-			Base:  "USD",
-			Rates: map[string]float64{},
+		// New API response format
+		response := map[string]interface{}{
+			"date": "2024-01-15",
+			"usd":  map[string]float64{},
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -288,9 +294,12 @@ func TestCurrencyAPIProvider_FetchAllRates_EmptyRates(t *testing.T) {
 
 func TestCurrencyAPIProvider_FetchAllRates_APIError(t *testing.T) {
 	// Create mock server that returns API error
+	// Note: New API doesn't have an "error" field in the same way
+	// We'll return an empty response or invalid structure
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := currencyAPIResponse{
-			Error: "Invalid base currency",
+		// Return empty response (no base currency found)
+		response := map[string]interface{}{
+			"date": "2024-01-15",
 		}
 
 		w.Header().Set("Content-Type", "application/json")

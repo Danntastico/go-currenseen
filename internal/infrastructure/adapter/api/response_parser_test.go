@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -11,11 +12,13 @@ func TestParseRateResponse_Success(t *testing.T) {
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
 
+	// New API format: rates nested under base currency (lowercase)
 	resp := &currencyAPIResponse{
 		Date: "2024-01-15",
-		Base: "USD",
-		Rates: map[string]float64{
-			"EUR": 0.85,
+		Rates: map[string]map[string]float64{
+			"usd": {
+				"eur": 0.85,
+			},
 		},
 	}
 
@@ -54,8 +57,10 @@ func TestParseRateResponse_APIError(t *testing.T) {
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
 
+	// New API: base currency not found (empty rates)
 	resp := &currencyAPIResponse{
-		Error: "Invalid base currency",
+		Date:  "2024-01-15",
+		Rates: map[string]map[string]float64{},
 	}
 
 	_, err := parseRateResponse(resp, base, target)
@@ -63,8 +68,8 @@ func TestParseRateResponse_APIError(t *testing.T) {
 		t.Fatal("parseRateResponse() error = nil, want error")
 	}
 
-	if err.Error() != "api returned error: Invalid base currency" {
-		t.Errorf("Error message = %q, want 'api returned error: Invalid base currency'", err.Error())
+	if !strings.Contains(err.Error(), "base currency") {
+		t.Errorf("Error message = %q, want to contain 'base currency'", err.Error())
 	}
 }
 
@@ -72,10 +77,13 @@ func TestParseRateResponse_BaseCurrencyMismatch(t *testing.T) {
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
 
+	// New API: base currency not found (different base in response)
 	resp := &currencyAPIResponse{
-		Base: "EUR", // Mismatch
-		Rates: map[string]float64{
-			"USD": 1.18,
+		Date: "2024-01-15",
+		Rates: map[string]map[string]float64{
+			"eur": { // Wrong base
+				"usd": 1.18,
+			},
 		},
 	}
 
@@ -84,9 +92,8 @@ func TestParseRateResponse_BaseCurrencyMismatch(t *testing.T) {
 		t.Fatal("parseRateResponse() error = nil, want error")
 	}
 
-	expectedErr := "base currency mismatch: expected USD, got EUR"
-	if err.Error() != expectedErr {
-		t.Errorf("Error message = %q, want %q", err.Error(), expectedErr)
+	if !strings.Contains(err.Error(), "base currency") {
+		t.Errorf("Error message = %q, want to contain 'base currency'", err.Error())
 	}
 }
 
@@ -95,9 +102,11 @@ func TestParseRateResponse_TargetNotFound(t *testing.T) {
 	target, _ := entity.NewCurrencyCode("EUR")
 
 	resp := &currencyAPIResponse{
-		Base: "USD",
-		Rates: map[string]float64{
-			"GBP": 0.75, // EUR not present
+		Date: "2024-01-15",
+		Rates: map[string]map[string]float64{
+			"usd": {
+				"gbp": 0.75, // EUR not present
+			},
 		},
 	}
 
@@ -127,9 +136,11 @@ func TestParseRateResponse_InvalidRate(t *testing.T) {
 			target, _ := entity.NewCurrencyCode("EUR")
 
 			resp := &currencyAPIResponse{
-				Base: "USD",
-				Rates: map[string]float64{
-					"EUR": tt.rate,
+				Date: "2024-01-15",
+				Rates: map[string]map[string]float64{
+					"usd": {
+						"eur": tt.rate,
+					},
 				},
 			}
 
@@ -146,11 +157,12 @@ func TestParseAllRatesResponse_Success(t *testing.T) {
 
 	resp := &currencyAPIResponse{
 		Date: "2024-01-15",
-		Base: "USD",
-		Rates: map[string]float64{
-			"EUR": 0.85,
-			"GBP": 0.75,
-			"JPY": 110.50,
+		Rates: map[string]map[string]float64{
+			"usd": {
+				"eur": 0.85,
+				"gbp": 0.75,
+				"jpy": 110.50,
+			},
 		},
 	}
 
@@ -178,8 +190,10 @@ func TestParseAllRatesResponse_Success(t *testing.T) {
 func TestParseAllRatesResponse_APIError(t *testing.T) {
 	base, _ := entity.NewCurrencyCode("USD")
 
+	// New API: base currency not found
 	resp := &currencyAPIResponse{
-		Error: "Invalid base currency",
+		Date:  "2024-01-15",
+		Rates: map[string]map[string]float64{},
 	}
 
 	_, err := parseAllRatesResponse(resp, base)
@@ -192,9 +206,11 @@ func TestParseAllRatesResponse_BaseCurrencyMismatch(t *testing.T) {
 	base, _ := entity.NewCurrencyCode("USD")
 
 	resp := &currencyAPIResponse{
-		Base: "EUR", // Mismatch
-		Rates: map[string]float64{
-			"USD": 1.18,
+		Date: "2024-01-15",
+		Rates: map[string]map[string]float64{
+			"eur": { // Wrong base
+				"usd": 1.18,
+			},
 		},
 	}
 
@@ -208,13 +224,15 @@ func TestParseAllRatesResponse_SkipsInvalidRates(t *testing.T) {
 	base, _ := entity.NewCurrencyCode("USD")
 
 	resp := &currencyAPIResponse{
-		Base: "USD",
-		Rates: map[string]float64{
-			"EUR": 0.85, // Valid
-			"GBP": 0.0,  // Invalid (zero)
-			"JPY": -1.0, // Invalid (negative)
-			"XX":  1.0,  // Invalid (wrong length - will fail NewCurrencyCode)
-			"USD": 1.0,  // Invalid (same as base)
+		Date: "2024-01-15",
+		Rates: map[string]map[string]float64{
+			"usd": {
+				"eur": 0.85, // Valid
+				"gbp": 0.0,  // Invalid (zero)
+				"jpy": -1.0, // Invalid (negative)
+				"xx":  1.0,  // Invalid (wrong length - will fail NewCurrencyCode)
+				"usd": 1.0,  // Invalid (same as base)
+			},
 		},
 	}
 
@@ -238,8 +256,10 @@ func TestParseAllRatesResponse_EmptyRates(t *testing.T) {
 	base, _ := entity.NewCurrencyCode("USD")
 
 	resp := &currencyAPIResponse{
-		Base:  "USD",
-		Rates: map[string]float64{}, // Empty
+		Date: "2024-01-15",
+		Rates: map[string]map[string]float64{
+			"usd": {}, // Empty
+		},
 	}
 
 	rates, err := parseAllRatesResponse(resp, base)

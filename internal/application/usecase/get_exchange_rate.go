@@ -54,24 +54,35 @@ func NewGetExchangeRateUseCase(
 // - Reduces external API calls (>80% reduction)
 // - Faster response times (<200ms for cached)
 func (uc *GetExchangeRateUseCase) Execute(ctx context.Context, req dto.GetRateRequest) (dto.RateResponse, error) {
+	fmt.Printf("[GetExchangeRateUseCase] Execute called with Base=%s, Target=%s\n", req.Base, req.Target)
+
 	// Validate currency codes
 	base, err := entity.NewCurrencyCode(req.Base)
 	if err != nil {
+		fmt.Printf("[GetExchangeRateUseCase] Invalid base currency: %v\n", err)
 		return dto.RateResponse{}, fmt.Errorf("invalid base currency: %w", err)
 	}
 
 	target, err := entity.NewCurrencyCode(req.Target)
 	if err != nil {
+		fmt.Printf("[GetExchangeRateUseCase] Invalid target currency: %v\n", err)
 		return dto.RateResponse{}, fmt.Errorf("invalid target currency: %w", err)
 	}
 
 	// Check if base and target are the same
 	if base.Equal(target) {
+		fmt.Printf("[GetExchangeRateUseCase] Base and target are the same\n")
 		return dto.RateResponse{}, fmt.Errorf("currency code validation: %w", entity.ErrCurrencyCodeMismatch)
 	}
 
 	// Step 1: Check cache
+	fmt.Printf("[GetExchangeRateUseCase] Checking cache for %s/%s\n", base, target)
 	cachedRate, err := uc.repository.Get(ctx, base, target)
+	if err != nil {
+		fmt.Printf("[GetExchangeRateUseCase] Cache check error: %v\n", err)
+	} else if cachedRate != nil {
+		fmt.Printf("[GetExchangeRateUseCase] Cache hit: rate=%.4f, valid=%v\n", cachedRate.Rate, cachedRate.IsValid(uc.cacheTTL))
+	}
 	if err == nil && cachedRate != nil {
 		// Cache hit - check if still valid
 		if cachedRate.IsValid(uc.cacheTTL) {
@@ -130,6 +141,7 @@ func (uc *GetExchangeRateUseCase) Execute(ctx context.Context, req dto.GetRateRe
 	}
 
 	// Both cache and external API failed
+	fmt.Printf("[GetExchangeRateUseCase] Both cache and API failed. Error: %v\n", err)
 	if errors.Is(err, entity.ErrRateNotFound) {
 		return dto.RateResponse{}, fmt.Errorf("exchange rate not found for %s/%s: %w", base, target, err)
 	}

@@ -16,11 +16,14 @@ type APIConfig struct {
 // LoadAPIConfig loads API configuration from environment variables.
 //
 // Environment variables:
-// - EXCHANGE_RATE_API_URL: Base URL for the API (default: "https://api.fawazahmed0.currency-api.com/v1")
+// - EXCHANGE_RATE_API_URL: Base URL for the API (default: "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1")
 // - EXCHANGE_RATE_API_TIMEOUT: HTTP client timeout in seconds (default: 10)
 // - EXCHANGE_RATE_API_RETRY_ATTEMPTS: Maximum retry attempts (default: 3)
 //
 // Returns a configuration with defaults if environment variables are not set.
+//
+// Note: The API has been migrated from currency-api to exchange-api.
+// The new API uses jsDelivr CDN and has a different URL structure.
 //
 // Example usage:
 //
@@ -30,7 +33,8 @@ func LoadAPIConfig() APIConfig {
 	// Load base URL from environment
 	baseURL := os.Getenv("EXCHANGE_RATE_API_URL")
 	if baseURL == "" {
-		baseURL = "https://api.fawazahmed0.currency-api.com/v1"
+		// New API URL: uses jsDelivr CDN (migrated from old currency-api)
+		baseURL = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1"
 	}
 
 	// Load timeout from environment (in seconds)

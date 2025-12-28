@@ -56,14 +56,14 @@ func NewProvider(config ProviderConfig) (provider.ExchangeRateProvider, error) {
 //
 // Default configuration:
 // - Type: ProviderTypeCurrencyAPI
-// - BaseURL: "https://api.fawazahmed0.currency-api.com/v1"
+// - BaseURL: "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1"
 //
 // This is a convenience function for quick setup. For production use,
 // consider using NewProvider with explicit configuration.
 func NewDefaultProvider() provider.ExchangeRateProvider {
 	config := ProviderConfig{
 		Type:    ProviderTypeCurrencyAPI,
-		BaseURL: "https://api.fawazahmed0.currency-api.com/v1",
+		BaseURL: "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1",
 	}
 	// Ignore error - ProviderTypeCurrencyAPI is always valid
 	provider, _ := NewProvider(config)

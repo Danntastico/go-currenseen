@@ -14,7 +14,7 @@ func TestLoadAPIConfig_Defaults(t *testing.T) {
 
 	cfg := LoadAPIConfig()
 
-	expectedURL := "https://api.fawazahmed0.currency-api.com/v1"
+	expectedURL := "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1"
 	if cfg.BaseURL != expectedURL {
 		t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, expectedURL)
 	}
