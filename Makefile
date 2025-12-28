@@ -71,6 +71,11 @@ build-local: ## Build for local development
 	@go build -o bin/$(BINARY_NAME) ./cmd/lambda
 	@echo "Build complete: bin/$(BINARY_NAME)"
 
+build-local-server: ## Build local HTTP server for testing
+	@echo "Building local HTTP server..."
+	@go build -o bin/local-server ./cmd/local
+	@echo "Build complete: bin/local-server"
+
 clean: ## Clean build artifacts
 	@echo "Cleaning..."
 	@rm -rf bin/
@@ -79,9 +84,16 @@ clean: ## Clean build artifacts
 	@rm -rf .aws-sam/
 	@echo "Clean complete!"
 
-run: build-local ## Build and run locally
+run: build-local ## Build and run locally (Lambda mode - requires SAM or Lambda runtime)
 	@echo "Running locally..."
+	@echo "Note: This requires Lambda runtime. Use 'make run-local-server' for HTTP server."
 	@./bin/$(BINARY_NAME)
+
+run-local-server: build-local-server ## Build and run local HTTP server
+	@echo "Running local HTTP server..."
+	@echo "Server will start on http://localhost:8080 (or PORT env var)"
+	@echo "Set required environment variables (TABLE_NAME, etc.) before running"
+	@./bin/local-server
 
 validate: fmt lint vet test ## Run all validation checks
 
