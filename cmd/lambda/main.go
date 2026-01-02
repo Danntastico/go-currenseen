@@ -15,6 +15,7 @@ import (
 	"github.com/misterfancybg/go-currenseen/internal/infrastructure/config"
 	"github.com/misterfancybg/go-currenseen/internal/infrastructure/middleware"
 	"github.com/misterfancybg/go-currenseen/pkg/circuitbreaker"
+	"github.com/misterfancybg/go-currenseen/pkg/logger"
 )
 
 var (
@@ -26,6 +27,7 @@ var (
 //
 // This function:
 // - Loads unified configuration
+// - Creates logger
 // - Creates DynamoDB client and repository
 // - Creates HTTP client and API provider
 // - Creates circuit breaker and wraps provider
@@ -35,15 +37,21 @@ var (
 // Dependencies are initialized once during Lambda cold start and reused
 // across invocations for better performance.
 func initDependencies(ctx context.Context) error {
+	// Initialize logger first
+	log := logger.NewFromEnv()
+	log.Info("initializing Lambda dependencies")
+
 	// Load unified configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
+		log.Error("failed to load configuration", "error", err.Error())
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	// 1. Initialize DynamoDB repository
 	dynamoClient, err := config.NewDynamoDBClient(ctx)
 	if err != nil {
+		log.Error("failed to create DynamoDB client", "error", err.Error())
 		return fmt.Errorf("failed to create DynamoDB client: %w", err)
 	}
 
@@ -52,21 +60,22 @@ func initDependencies(ctx context.Context) error {
 	// 2. Initialize API provider with circuit breaker
 	httpClient := api.NewHTTPClient()
 
-	// Create base provider
-	baseProvider := api.NewCurrencyAPIProvider(httpClient, cfg.API.BaseURL)
+	// Create base provider with logger
+	baseProvider := api.NewCurrencyAPIProvider(httpClient, cfg.API.BaseURL, log)
 
 	// Create circuit breaker
 	circuitBreaker, err := circuitbreaker.NewCircuitBreaker(cfg.CircuitBreaker)
 	if err != nil {
+		log.Error("failed to create circuit breaker", "error", err.Error())
 		return fmt.Errorf("failed to create circuit breaker: %w", err)
 	}
 
 	// Wrap provider with circuit breaker
 	provider := api.NewCircuitBreakerProvider(baseProvider, circuitBreaker)
 
-	// 3. Initialize use cases
-	getRateUseCase := usecase.NewGetExchangeRateUseCase(repository, provider, cfg.Cache.TTL)
-	getAllRatesUseCase := usecase.NewGetAllRatesUseCase(repository, provider, cfg.Cache.TTL)
+	// 3. Initialize use cases with logger
+	getRateUseCase := usecase.NewGetExchangeRateUseCase(repository, provider, cfg.Cache.TTL, log)
+	getAllRatesUseCase := usecase.NewGetAllRatesUseCase(repository, provider, cfg.Cache.TTL, log)
 	healthCheckUseCase := usecase.NewHealthCheckUseCase(repository)
 
 	// 4. Create handler dependencies
@@ -74,8 +83,10 @@ func initDependencies(ctx context.Context) error {
 		GetRateUseCase:     getRateUseCase,
 		GetAllRatesUseCase: getAllRatesUseCase,
 		HealthCheckUseCase: healthCheckUseCase,
+		Logger:             log,
 	}
 
+	log.Info("Lambda dependencies initialized successfully")
 	return nil
 }
 

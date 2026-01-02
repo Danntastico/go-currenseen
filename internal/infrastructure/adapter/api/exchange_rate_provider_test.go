@@ -16,7 +16,7 @@ func TestNewCurrencyAPIProvider(t *testing.T) {
 	client := NewHTTPClient()
 	baseURL := "https://api.example.com/v1"
 
-	provider := NewCurrencyAPIProvider(client, baseURL)
+	provider := NewCurrencyAPIProvider(client, baseURL, nil)
 
 	if provider == nil {
 		t.Fatal("NewCurrencyAPIProvider() returned nil")
@@ -34,7 +34,7 @@ func TestNewCurrencyAPIProvider(t *testing.T) {
 func TestNewCurrencyAPIProvider_DefaultBaseURL(t *testing.T) {
 	client := NewHTTPClient()
 
-	provider := NewCurrencyAPIProvider(client, "")
+	provider := NewCurrencyAPIProvider(client, "", nil)
 
 	expectedURL := "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1"
 	if provider.baseURL != expectedURL {
@@ -67,7 +67,7 @@ func TestCurrencyAPIProvider_FetchRate_Success(t *testing.T) {
 
 	// Create provider with test server URL
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
@@ -108,7 +108,7 @@ func TestCurrencyAPIProvider_FetchRate_HTTPError(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
@@ -131,7 +131,7 @@ func TestCurrencyAPIProvider_FetchRate_InvalidJSON(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
@@ -153,7 +153,7 @@ func TestCurrencyAPIProvider_FetchRate_ContextCancellation(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
@@ -182,7 +182,7 @@ func TestCurrencyAPIProvider_FetchRate_ContextTimeout(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
@@ -228,7 +228,7 @@ func TestCurrencyAPIProvider_FetchAllRates_Success(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 
@@ -271,7 +271,7 @@ func TestCurrencyAPIProvider_FetchAllRates_EmptyRates(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 
@@ -309,7 +309,7 @@ func TestCurrencyAPIProvider_FetchAllRates_APIError(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 
@@ -329,7 +329,7 @@ func TestCurrencyAPIProvider_FetchAllRates_HTTPError(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 
@@ -350,7 +350,7 @@ func TestCurrencyAPIProvider_FetchAllRates_ContextCancellation(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL)
+	provider := NewCurrencyAPIProvider(client, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 

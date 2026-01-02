@@ -2,10 +2,12 @@ package lambda
 
 import (
 	"context"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/misterfancybg/go-currenseen/internal/application/dto"
 	"github.com/misterfancybg/go-currenseen/internal/infrastructure/middleware"
+	"github.com/misterfancybg/go-currenseen/pkg/logger"
 )
 
 // GetRateUseCase defines the interface for getting a single exchange rate.
@@ -32,6 +34,7 @@ type HandlerDependencies struct {
 	GetRateUseCase     GetRateUseCase
 	GetAllRatesUseCase GetAllRatesUseCase
 	HealthCheckUseCase HealthCheckUseCase
+	Logger             *logger.Logger
 }
 
 // GetRateHandler handles GET /rates/{base}/{target} requests.
@@ -49,9 +52,27 @@ type HandlerDependencies struct {
 // - 503 Service Unavailable if circuit breaker is open
 // - 500 Internal Server Error for other errors
 func GetRateHandler(ctx context.Context, event events.APIGatewayProxyRequest, deps *HandlerDependencies) events.APIGatewayProxyResponse {
+	startTime := time.Now()
+
+	// Extract or generate request ID and add to context
+	ctx = middleware.WithRequestID(ctx, event)
+
+	// Get logger (use default if not provided)
+	log := deps.Logger
+	if log == nil {
+		log = logger.NewFromEnv()
+	}
+	log = log.WithContext(ctx)
+
+	// Log incoming request
+	log.LogRequest(ctx, event.HTTPMethod, event.Path,
+		"handler", "GetRateHandler",
+	)
+
 	// Validate request
 	base, target, err := middleware.ValidateGetRateRequest(event)
 	if err != nil {
+		log.LogError(ctx, err, "request validation failed")
 		return middleware.ErrorResponse(err)
 	}
 
@@ -64,8 +85,20 @@ func GetRateHandler(ctx context.Context, event events.APIGatewayProxyRequest, de
 	// Call use case
 	resp, err := deps.GetRateUseCase.Execute(ctx, req)
 	if err != nil {
+		duration := time.Since(startTime)
+		log.LogError(ctx, err, "use case execution failed",
+			"duration_ms", duration.Milliseconds(),
+		)
 		return middleware.ErrorResponse(err)
 	}
+
+	// Log successful response
+	duration := time.Since(startTime)
+	log.LogResponse(ctx, 200, duration.Milliseconds(),
+		"handler", "GetRateHandler",
+		"base", base.String(),
+		"target", target.String(),
+	)
 
 	// Return success response
 	return middleware.SuccessResponse(200, resp)
@@ -85,9 +118,27 @@ func GetRateHandler(ctx context.Context, event events.APIGatewayProxyRequest, de
 // - 503 Service Unavailable if circuit breaker is open
 // - 500 Internal Server Error for other errors
 func GetAllRatesHandler(ctx context.Context, event events.APIGatewayProxyRequest, deps *HandlerDependencies) events.APIGatewayProxyResponse {
+	startTime := time.Now()
+
+	// Extract or generate request ID and add to context
+	ctx = middleware.WithRequestID(ctx, event)
+
+	// Get logger (use default if not provided)
+	log := deps.Logger
+	if log == nil {
+		log = logger.NewFromEnv()
+	}
+	log = log.WithContext(ctx)
+
+	// Log incoming request
+	log.LogRequest(ctx, event.HTTPMethod, event.Path,
+		"handler", "GetAllRatesHandler",
+	)
+
 	// Validate request
 	base, err := middleware.ValidateGetRatesRequest(event)
 	if err != nil {
+		log.LogError(ctx, err, "request validation failed")
 		return middleware.ErrorResponse(err)
 	}
 
@@ -99,8 +150,20 @@ func GetAllRatesHandler(ctx context.Context, event events.APIGatewayProxyRequest
 	// Call use case
 	resp, err := deps.GetAllRatesUseCase.Execute(ctx, req)
 	if err != nil {
+		duration := time.Since(startTime)
+		log.LogError(ctx, err, "use case execution failed",
+			"duration_ms", duration.Milliseconds(),
+		)
 		return middleware.ErrorResponse(err)
 	}
+
+	// Log successful response
+	duration := time.Since(startTime)
+	log.LogResponse(ctx, 200, duration.Milliseconds(),
+		"handler", "GetAllRatesHandler",
+		"base", base.String(),
+		"rates_count", len(resp.Rates),
+	)
 
 	// Return success response
 	return middleware.SuccessResponse(200, resp)
@@ -117,8 +180,26 @@ func GetAllRatesHandler(ctx context.Context, event events.APIGatewayProxyRequest
 // - 200 OK if service is healthy
 // - 503 Service Unavailable if service is unhealthy
 func HealthHandler(ctx context.Context, event events.APIGatewayProxyRequest, deps *HandlerDependencies) events.APIGatewayProxyResponse {
+	startTime := time.Now()
+
+	// Extract or generate request ID and add to context
+	ctx = middleware.WithRequestID(ctx, event)
+
+	// Get logger (use default if not provided)
+	log := deps.Logger
+	if log == nil {
+		log = logger.NewFromEnv()
+	}
+	log = log.WithContext(ctx)
+
+	// Log incoming request
+	log.LogRequest(ctx, event.HTTPMethod, event.Path,
+		"handler", "HealthHandler",
+	)
+
 	// Validate request
 	if err := middleware.ValidateHealthRequest(event); err != nil {
+		log.LogError(ctx, err, "request validation failed")
 		return middleware.ErrorResponse(err)
 	}
 
@@ -128,6 +209,10 @@ func HealthHandler(ctx context.Context, event events.APIGatewayProxyRequest, dep
 	// Call use case
 	resp, err := deps.HealthCheckUseCase.Execute(ctx, req)
 	if err != nil {
+		duration := time.Since(startTime)
+		log.LogError(ctx, err, "health check failed",
+			"duration_ms", duration.Milliseconds(),
+		)
 		return middleware.ErrorResponse(err)
 	}
 
@@ -136,6 +221,13 @@ func HealthHandler(ctx context.Context, event events.APIGatewayProxyRequest, dep
 	if resp.Status == "unhealthy" {
 		statusCode = 503
 	}
+
+	// Log response
+	duration := time.Since(startTime)
+	log.LogResponse(ctx, statusCode, duration.Milliseconds(),
+		"handler", "HealthHandler",
+		"status", resp.Status,
+	)
 
 	// Return response
 	return middleware.SuccessResponse(statusCode, resp)

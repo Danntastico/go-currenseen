@@ -11,6 +11,7 @@ import (
 
 	"github.com/misterfancybg/go-currenseen/internal/domain/entity"
 	"github.com/misterfancybg/go-currenseen/internal/domain/provider"
+	"github.com/misterfancybg/go-currenseen/pkg/logger"
 )
 
 // currencyAPIResponse represents the new Exchange-api response structure.
@@ -183,6 +184,7 @@ type CurrencyAPIProvider struct {
 	client      *http.Client
 	baseURL     string
 	fallbackURL string // Fallback URL for high availability
+	logger      *logger.Logger
 }
 
 // NewCurrencyAPIProvider creates a new CurrencyAPIProvider.
@@ -195,17 +197,21 @@ type CurrencyAPIProvider struct {
 //
 // Note: The API has been migrated from currency-api to exchange-api.
 // The new API uses a different URL structure and response format.
-func NewCurrencyAPIProvider(client *http.Client, baseURL string) *CurrencyAPIProvider {
+func NewCurrencyAPIProvider(client *http.Client, baseURL string, log *logger.Logger) *CurrencyAPIProvider {
 	if baseURL == "" {
 		// New API URL: uses jsDelivr CDN (primary)
 		baseURL = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1"
 	}
 	// Fallback URL: Cloudflare Pages (as recommended by API docs)
 	fallbackURL := "https://latest.currency-api.pages.dev/v1"
+	if log == nil {
+		log = logger.NewFromEnv()
+	}
 	return &CurrencyAPIProvider{
 		client:      client,
 		baseURL:     baseURL,
 		fallbackURL: fallbackURL,
+		logger:      log,
 	}
 }
 
@@ -221,7 +227,12 @@ func NewCurrencyAPIProvider(client *http.Client, baseURL string) *CurrencyAPIPro
 // Context cancellation: Returns error if ctx is cancelled or times out.
 // The HTTP client respects the context deadline for request timeout.
 func (p *CurrencyAPIProvider) FetchRate(ctx context.Context, base, target entity.CurrencyCode) (*entity.ExchangeRate, error) {
-	fmt.Println("FetchRate called with base: ", base, " and target: ", target)
+	log := p.logger.WithContext(ctx)
+	log.Debug("fetching exchange rate from external API",
+		"base", base.String(),
+		"target", target.String(),
+	)
+
 	// Check context before starting operation
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -240,12 +251,17 @@ func (p *CurrencyAPIProvider) FetchRate(ctx context.Context, base, target entity
 
 	var lastErr error
 	for i, url := range urls {
-		fmt.Printf("[CurrencyAPIProvider] Attempting request %d/%d to: %s\n", i+1, len(urls), url)
+		log.Debug("attempting API request",
+			"attempt", i+1,
+			"total_attempts", len(urls),
+			"url", url,
+		)
 
 		// Create request with context (enables cancellation and timeout)
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to create request: %w", err)
+			log.Debug("failed to create request", "error", err.Error())
 			continue
 		}
 
@@ -253,7 +269,10 @@ func (p *CurrencyAPIProvider) FetchRate(ctx context.Context, base, target entity
 		resp, err := p.client.Do(req)
 		if err != nil {
 			// Log error but try fallback
-			fmt.Printf("[CurrencyAPIProvider] Request failed: %v\n", err)
+			log.Debug("HTTP request failed",
+				"error", err.Error(),
+				"url", url,
+			)
 			lastErr = fmt.Errorf("http request failed: %w", err)
 			continue
 		}
@@ -262,6 +281,10 @@ func (p *CurrencyAPIProvider) FetchRate(ctx context.Context, base, target entity
 		// Check status code
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			log.Debug("unexpected status code",
+				"status_code", resp.StatusCode,
+				"url", url,
+			)
 			continue
 		}
 
@@ -269,6 +292,7 @@ func (p *CurrencyAPIProvider) FetchRate(ctx context.Context, base, target entity
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response: %w", err)
+			log.Debug("failed to read response", "error", err.Error())
 			continue
 		}
 
@@ -276,15 +300,25 @@ func (p *CurrencyAPIProvider) FetchRate(ctx context.Context, base, target entity
 		var apiResp currencyAPIResponse
 		if err := json.Unmarshal(body, &apiResp); err != nil {
 			lastErr = fmt.Errorf("failed to parse response: %w", err)
+			log.Debug("failed to parse response", "error", err.Error())
 			continue
 		}
 
 		// Success! Convert to domain entity
-		fmt.Printf("[CurrencyAPIProvider] Successfully fetched from: %s\n", url)
+		log.Info("successfully fetched rate from API",
+			"url", url,
+			"base", base.String(),
+			"target", target.String(),
+		)
 		return parseRateResponse(&apiResp, base, target)
 	}
 
 	// All URLs failed
+	log.Error("all API endpoints failed",
+		"error", lastErr.Error(),
+		"base", base.String(),
+		"target", target.String(),
+	)
 	return nil, fmt.Errorf("all API endpoints failed, last error: %w", lastErr)
 }
 
@@ -301,6 +335,11 @@ func (p *CurrencyAPIProvider) FetchRate(ctx context.Context, base, target entity
 // Context cancellation: Returns error if ctx is cancelled or times out.
 // The HTTP client respects the context deadline for request timeout.
 func (p *CurrencyAPIProvider) FetchAllRates(ctx context.Context, base entity.CurrencyCode) ([]*entity.ExchangeRate, error) {
+	log := p.logger.WithContext(ctx)
+	log.Debug("fetching all exchange rates from external API",
+		"base", base.String(),
+	)
+
 	// Check context before starting operation
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -319,12 +358,17 @@ func (p *CurrencyAPIProvider) FetchAllRates(ctx context.Context, base entity.Cur
 
 	var lastErr error
 	for i, url := range urls {
-		fmt.Printf("[CurrencyAPIProvider] Attempting request %d/%d to: %s\n", i+1, len(urls), url)
+		log.Debug("attempting API request",
+			"attempt", i+1,
+			"total_attempts", len(urls),
+			"url", url,
+		)
 
 		// Create request with context (enables cancellation and timeout)
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to create request: %w", err)
+			log.Debug("failed to create request", "error", err.Error())
 			continue
 		}
 
@@ -332,6 +376,10 @@ func (p *CurrencyAPIProvider) FetchAllRates(ctx context.Context, base entity.Cur
 		resp, err := p.client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("http request failed: %w", err)
+			log.Debug("HTTP request failed",
+				"error", err.Error(),
+				"url", url,
+			)
 			continue
 		}
 		defer resp.Body.Close()
@@ -339,6 +387,10 @@ func (p *CurrencyAPIProvider) FetchAllRates(ctx context.Context, base entity.Cur
 		// Check status code
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			log.Debug("unexpected status code",
+				"status_code", resp.StatusCode,
+				"url", url,
+			)
 			continue
 		}
 
@@ -346,6 +398,7 @@ func (p *CurrencyAPIProvider) FetchAllRates(ctx context.Context, base entity.Cur
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response: %w", err)
+			log.Debug("failed to read response", "error", err.Error())
 			continue
 		}
 
@@ -353,14 +406,15 @@ func (p *CurrencyAPIProvider) FetchAllRates(ctx context.Context, base entity.Cur
 		var apiResp currencyAPIResponse
 		if err := json.Unmarshal(body, &apiResp); err != nil {
 			lastErr = fmt.Errorf("failed to parse response: %w", err)
+			log.Debug("failed to parse response", "error", err.Error())
 			continue
 		}
 
 		// Success! Convert to domain entities
-		fmt.Printf("[CurrencyAPIProvider] Successfully fetched from: %s\n", url)
 		rates, err := parseAllRatesResponse(&apiResp, base)
 		if err != nil {
 			lastErr = err
+			log.Debug("failed to parse rates response", "error", err.Error())
 			continue
 		}
 
@@ -370,10 +424,19 @@ func (p *CurrencyAPIProvider) FetchAllRates(ctx context.Context, base entity.Cur
 			return []*entity.ExchangeRate{}, nil
 		}
 
+		log.Info("successfully fetched all rates from API",
+			"url", url,
+			"base", base.String(),
+			"rates_count", len(rates),
+		)
 		return rates, nil
 	}
 
 	// All URLs failed
+	log.Error("all API endpoints failed",
+		"error", lastErr.Error(),
+		"base", base.String(),
+	)
 	return nil, fmt.Errorf("all API endpoints failed, last error: %w", lastErr)
 }
 

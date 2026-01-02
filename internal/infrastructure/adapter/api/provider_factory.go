@@ -46,7 +46,8 @@ func NewProvider(config ProviderConfig) (provider.ExchangeRateProvider, error) {
 
 	switch config.Type {
 	case ProviderTypeCurrencyAPI:
-		return NewCurrencyAPIProvider(client, config.BaseURL), nil
+		// Logger will be created from env if nil
+		return NewCurrencyAPIProvider(client, config.BaseURL, nil), nil
 	default:
 		return nil, fmt.Errorf("unknown provider type: %s", config.Type)
 	}

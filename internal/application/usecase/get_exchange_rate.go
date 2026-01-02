@@ -11,6 +11,7 @@ import (
 	"github.com/misterfancybg/go-currenseen/internal/domain/provider"
 	"github.com/misterfancybg/go-currenseen/internal/domain/repository"
 	"github.com/misterfancybg/go-currenseen/pkg/circuitbreaker"
+	"github.com/misterfancybg/go-currenseen/pkg/logger"
 )
 
 // GetExchangeRateUseCase handles the use case for getting an exchange rate for a currency pair.
@@ -19,6 +20,7 @@ type GetExchangeRateUseCase struct {
 	repository repository.ExchangeRateRepository
 	provider   provider.ExchangeRateProvider
 	cacheTTL   time.Duration // TTL for cached rates
+	logger     *logger.Logger
 }
 
 // NewGetExchangeRateUseCase creates a new GetExchangeRateUseCase with dependency injection.
@@ -26,11 +28,16 @@ func NewGetExchangeRateUseCase(
 	repo repository.ExchangeRateRepository,
 	prov provider.ExchangeRateProvider,
 	cacheTTL time.Duration,
+	log *logger.Logger,
 ) *GetExchangeRateUseCase {
+	if log == nil {
+		log = logger.NewFromEnv()
+	}
 	return &GetExchangeRateUseCase{
 		repository: repo,
 		provider:   prov,
 		cacheTTL:   cacheTTL,
+		logger:     log,
 	}
 }
 
@@ -54,58 +61,93 @@ func NewGetExchangeRateUseCase(
 // - Reduces external API calls (>80% reduction)
 // - Faster response times (<200ms for cached)
 func (uc *GetExchangeRateUseCase) Execute(ctx context.Context, req dto.GetRateRequest) (dto.RateResponse, error) {
-	fmt.Printf("[GetExchangeRateUseCase] Execute called with Base=%s, Target=%s\n", req.Base, req.Target)
+	startTime := time.Now()
+	log := uc.logger.WithContext(ctx)
+
+	// Add currency codes to context for logging
+	ctx = logger.WithCurrencyCodes(ctx, req.Base, req.Target)
+	log = uc.logger.WithContext(ctx)
+
+	log.Debug("executing get exchange rate use case",
+		"base", req.Base,
+		"target", req.Target,
+	)
 
 	// Validate currency codes
 	base, err := entity.NewCurrencyCode(req.Base)
 	if err != nil {
-		fmt.Printf("[GetExchangeRateUseCase] Invalid base currency: %v\n", err)
+		log.LogError(ctx, err, "invalid base currency code")
 		return dto.RateResponse{}, fmt.Errorf("invalid base currency: %w", err)
 	}
 
 	target, err := entity.NewCurrencyCode(req.Target)
 	if err != nil {
-		fmt.Printf("[GetExchangeRateUseCase] Invalid target currency: %v\n", err)
+		log.LogError(ctx, err, "invalid target currency code")
 		return dto.RateResponse{}, fmt.Errorf("invalid target currency: %w", err)
 	}
 
 	// Check if base and target are the same
 	if base.Equal(target) {
-		fmt.Printf("[GetExchangeRateUseCase] Base and target are the same\n")
+		log.Warn("base and target currencies are the same",
+			"base", base.String(),
+			"target", target.String(),
+		)
 		return dto.RateResponse{}, fmt.Errorf("currency code validation: %w", entity.ErrCurrencyCodeMismatch)
 	}
 
 	// Step 1: Check cache
-	fmt.Printf("[GetExchangeRateUseCase] Checking cache for %s/%s\n", base, target)
+	log.Debug("checking cache for exchange rate")
 	cachedRate, err := uc.repository.Get(ctx, base, target)
 	if err != nil {
-		fmt.Printf("[GetExchangeRateUseCase] Cache check error: %v\n", err)
+		log.Debug("cache check error", "error", err.Error())
 	} else if cachedRate != nil {
-		fmt.Printf("[GetExchangeRateUseCase] Cache hit: rate=%.4f, valid=%v\n", cachedRate.Rate, cachedRate.IsValid(uc.cacheTTL))
+		isValid := cachedRate.IsValid(uc.cacheTTL)
+		log.Debug("cache check result",
+			"cache_hit", true,
+			"rate", cachedRate.Rate,
+			"valid", isValid,
+			"timestamp", cachedRate.Timestamp,
+		)
 	}
 	if err == nil && cachedRate != nil {
 		// Cache hit - check if still valid
 		if cachedRate.IsValid(uc.cacheTTL) {
 			// Cache is valid, return it
+			duration := time.Since(startTime)
+			log.Info("cache hit, returning cached rate",
+				"rate", cachedRate.Rate,
+				"duration_ms", duration.Milliseconds(),
+			)
 			return dto.ToRateResponse(cachedRate), nil
 		}
+		log.Debug("cache expired, fetching fresh rate")
 		// Cache exists but expired - will fetch fresh rate below
 	}
 
 	// Step 2: Fetch from external API
+	log.Debug("fetching rate from external API")
 	freshRate, err := uc.provider.FetchRate(ctx, base, target)
 	if err == nil && freshRate != nil {
 		// Successfully fetched - save to cache
 		if saveErr := uc.repository.Save(ctx, freshRate, uc.cacheTTL); saveErr != nil {
-			// Log error but don't fail the request - cache save failure shouldn't break the flow
-			// In production, you'd log this error
+			log.Warn("failed to save rate to cache",
+				"error", saveErr.Error(),
+			)
+		} else {
+			log.Debug("rate saved to cache successfully")
 		}
+		duration := time.Since(startTime)
+		log.Info("successfully fetched rate from API",
+			"rate", freshRate.Rate,
+			"duration_ms", duration.Milliseconds(),
+		)
 		return dto.ToRateResponse(freshRate), nil
 	}
 
 	// Step 3: Fallback to stale cache if external API failed
 	// Check if circuit breaker is open (specific handling)
 	if errors.Is(err, circuitbreaker.ErrCircuitOpen) {
+		log.Warn("circuit breaker is open, attempting stale cache fallback")
 		// Circuit is open - explicitly use GetStale() for fallback
 		staleRate, staleErr := uc.repository.GetStale(ctx, base, target)
 		if staleErr == nil && staleRate != nil {
@@ -118,15 +160,25 @@ func (uc *GetExchangeRateUseCase) Execute(ctx context.Context, req dto.GetRateRe
 				true, // Mark as stale
 			)
 			if entityErr == nil {
+				log.Info("returning stale cache due to circuit breaker open",
+					"rate", staleEntity.Rate,
+					"stale", true,
+				)
 				return dto.ToRateResponse(staleEntity), nil
 			}
 		}
 		// No stale cache available - return circuit open error
+		log.Error("circuit breaker open and no stale cache available",
+			"error", err.Error(),
+		)
 		return dto.RateResponse{}, fmt.Errorf("circuit breaker is open and no stale cache available: %w", err)
 	}
 
 	// Step 4: Fallback to stale cache for other provider errors
 	if cachedRate != nil {
+		log.Warn("provider error, falling back to stale cache",
+			"error", err.Error(),
+		)
 		// Return stale cache as fallback
 		staleRate, err := entity.NewExchangeRate(
 			cachedRate.Base,
@@ -136,12 +188,18 @@ func (uc *GetExchangeRateUseCase) Execute(ctx context.Context, req dto.GetRateRe
 			true, // Mark as stale
 		)
 		if err == nil {
+			log.Info("returning stale cache as fallback",
+				"rate", staleRate.Rate,
+				"stale", true,
+			)
 			return dto.ToRateResponse(staleRate), nil
 		}
 	}
 
 	// Both cache and external API failed
-	fmt.Printf("[GetExchangeRateUseCase] Both cache and API failed. Error: %v\n", err)
+	log.Error("both cache and API failed",
+		"error", err.Error(),
+	)
 	if errors.Is(err, entity.ErrRateNotFound) {
 		return dto.RateResponse{}, fmt.Errorf("exchange rate not found for %s/%s: %w", base, target, err)
 	}
