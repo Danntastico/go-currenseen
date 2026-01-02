@@ -198,12 +198,20 @@ type CurrencyAPIProvider struct {
 // Note: The API has been migrated from currency-api to exchange-api.
 // The new API uses a different URL structure and response format.
 func NewCurrencyAPIProvider(client *http.Client, baseURL string, log *logger.Logger) *CurrencyAPIProvider {
+	return NewCurrencyAPIProviderWithFallback(client, baseURL, "", log)
+}
+
+// NewCurrencyAPIProviderWithFallback creates a new CurrencyAPIProvider with a custom fallback URL.
+// This is useful for testing. If fallbackURL is empty, uses the default fallback URL.
+func NewCurrencyAPIProviderWithFallback(client *http.Client, baseURL, fallbackURL string, log *logger.Logger) *CurrencyAPIProvider {
 	if baseURL == "" {
 		// New API URL: uses jsDelivr CDN (primary)
 		baseURL = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1"
 	}
 	// Fallback URL: Cloudflare Pages (as recommended by API docs)
-	fallbackURL := "https://latest.currency-api.pages.dev/v1"
+	if fallbackURL == "" {
+		fallbackURL = "https://latest.currency-api.pages.dev/v1"
+	}
 	if log == nil {
 		log = logger.NewFromEnv()
 	}

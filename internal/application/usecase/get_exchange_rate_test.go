@@ -260,7 +260,7 @@ func TestGetExchangeRateUseCase_Execute(t *testing.T) {
 				fetchRateFunc: tt.providerFunc,
 			}
 
-			uc := NewGetExchangeRateUseCase(repo, prov, cacheTTL)
+			uc := NewGetExchangeRateUseCase(repo, prov, cacheTTL, nil)
 			resp, err := uc.Execute(ctx, tt.request)
 
 			if (err != nil) != tt.wantErr {

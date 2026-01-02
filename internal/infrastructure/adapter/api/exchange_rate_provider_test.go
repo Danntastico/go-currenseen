@@ -108,7 +108,8 @@ func TestCurrencyAPIProvider_FetchRate_HTTPError(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL, nil)
+	// Use the same server for both primary and fallback URLs to ensure failure
+	provider := NewCurrencyAPIProviderWithFallback(client, server.URL, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
@@ -131,7 +132,8 @@ func TestCurrencyAPIProvider_FetchRate_InvalidJSON(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL, nil)
+	// Use the same server for both primary and fallback URLs to ensure failure
+	provider := NewCurrencyAPIProviderWithFallback(client, server.URL, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 	target, _ := entity.NewCurrencyCode("EUR")
@@ -309,7 +311,8 @@ func TestCurrencyAPIProvider_FetchAllRates_APIError(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL, nil)
+	// Use the same server for both primary and fallback URLs to ensure failure
+	provider := NewCurrencyAPIProviderWithFallback(client, server.URL, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 
@@ -329,7 +332,8 @@ func TestCurrencyAPIProvider_FetchAllRates_HTTPError(t *testing.T) {
 	defer server.Close()
 
 	client := NewHTTPClient()
-	provider := NewCurrencyAPIProvider(client, server.URL, nil)
+	// Use the same server for both primary and fallback URLs to ensure failure
+	provider := NewCurrencyAPIProviderWithFallback(client, server.URL, server.URL, nil)
 
 	base, _ := entity.NewCurrencyCode("USD")
 

@@ -147,7 +147,7 @@ func TestGetAllRatesUseCase_Execute(t *testing.T) {
 				fetchAllRatesFunc: tt.providerFunc,
 			}
 
-			uc := NewGetAllRatesUseCase(repo, prov, cacheTTL)
+			uc := NewGetAllRatesUseCase(repo, prov, cacheTTL, nil)
 			resp, err := uc.Execute(ctx, tt.request)
 
 			if (err != nil) != tt.wantErr {
