@@ -142,7 +142,10 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// GetAPIKey retrieves the API key from Secrets Manager or environment variable.
+// GetAPIKey retrieves the API key for authenticating clients to our service.
+//
+// This is NOT for the external currency API (which is free and doesn't require a key).
+// This key is used by the APIKeyAuthenticator middleware to protect our Lambda endpoints.
 //
 // Priority:
 // 1. Secrets Manager (if enabled)
@@ -151,6 +154,9 @@ func (c *Config) Validate() error {
 //
 // This method requires a SecretsManager instance. If Secrets Manager is not enabled,
 // it falls back to the environment variable.
+//
+// Note: The external currency API (fawazahmed0/exchange-api) is free and public,
+// so it doesn't require an API key. This key is only for protecting our own service endpoints.
 func (c *Config) GetAPIKey(ctx context.Context, sm SecretsManager) (string, error) {
 	// Try Secrets Manager first if enabled
 	if c.SecretsManager.Enabled && sm != nil {

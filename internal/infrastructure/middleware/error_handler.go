@@ -48,6 +48,16 @@ func getStatusCode(err error) int {
 		return http.StatusServiceUnavailable
 	}
 
+	// Check for rate limit errors
+	if errors.Is(err, ErrRateLimitExceeded) {
+		return http.StatusTooManyRequests
+	}
+
+	// Check for authentication errors
+	if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrAPIKeyMissing) {
+		return http.StatusUnauthorized
+	}
+
 	// Check for validation errors (path parameter, method validation)
 	errMsg := err.Error()
 	if contains(errMsg, "path parameter") || contains(errMsg, "method") || contains(errMsg, "not allowed") {
@@ -83,6 +93,15 @@ func getErrorCode(err error) string {
 	if errors.Is(err, circuitbreaker.ErrCircuitOpen) {
 		return "CIRCUIT_BREAKER_OPEN"
 	}
+	if errors.Is(err, ErrRateLimitExceeded) {
+		return "RATE_LIMIT_EXCEEDED"
+	}
+	if errors.Is(err, ErrUnauthorized) {
+		return "UNAUTHORIZED"
+	}
+	if errors.Is(err, ErrAPIKeyMissing) {
+		return "API_KEY_MISSING"
+	}
 
 	return "INTERNAL_ERROR"
 }
@@ -113,6 +132,15 @@ func getClientMessage(err error) string {
 	}
 	if errors.Is(err, circuitbreaker.ErrCircuitOpen) {
 		return "Service temporarily unavailable"
+	}
+	if errors.Is(err, ErrRateLimitExceeded) {
+		return "Rate limit exceeded"
+	}
+	if errors.Is(err, ErrUnauthorized) {
+		return "Unauthorized access"
+	}
+	if errors.Is(err, ErrAPIKeyMissing) {
+		return "API key required"
 	}
 
 	// Generic message for unknown errors (security: don't leak internal details)
@@ -145,12 +173,24 @@ func ErrorResponse(err error) events.APIGatewayProxyResponse {
 		body = []byte(fmt.Sprintf(`{"error":"%s","timestamp":"%s"}`, clientMessage, time.Now().Format(time.RFC3339)))
 	}
 
+	// Add security headers to error responses
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+	securityHeaders := SecurityHeaders()
+	for key, value := range securityHeaders {
+		headers[key] = value
+	}
+
+	// Add rate limit headers if applicable
+	if statusCode == http.StatusTooManyRequests {
+		headers["Retry-After"] = "60" // Suggest retry after 60 seconds
+	}
+
 	return events.APIGatewayProxyResponse{
 		StatusCode: statusCode,
 		Body:       string(body),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
+		Headers:    headers,
 	}
 }
 
@@ -171,11 +211,18 @@ func SuccessResponse(statusCode int, body interface{}) events.APIGatewayProxyRes
 		statusCode = http.StatusOK
 	}
 
+	// Add security headers to success responses
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+	securityHeaders := SecurityHeaders()
+	for key, value := range securityHeaders {
+		headers[key] = value
+	}
+
 	return events.APIGatewayProxyResponse{
 		StatusCode: statusCode,
 		Body:       string(jsonBody),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
+		Headers:    headers,
 	}
 }

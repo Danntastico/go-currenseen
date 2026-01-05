@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -78,12 +80,66 @@ func initDependencies(ctx context.Context) error {
 	getAllRatesUseCase := usecase.NewGetAllRatesUseCase(repository, provider, cfg.Cache.TTL, log)
 	healthCheckUseCase := usecase.NewHealthCheckUseCase(repository)
 
-	// 4. Create handler dependencies
+	// 4. Initialize security components
+	var apiKeyAuthenticator *middleware.APIKeyAuthenticator
+	var rateLimiter *middleware.RateLimiter
+
+	// Initialize Secrets Manager if enabled
+	var secretsManager config.SecretsManager
+	if cfg.SecretsManager.Enabled {
+		sm, err := config.NewAWSSecretsManager(ctx, cfg.SecretsManager.SecretName, cfg.SecretsManager.CacheTTL)
+		if err != nil {
+			log.Warn("failed to initialize Secrets Manager, authentication will be disabled", "error", err.Error())
+		} else {
+			secretsManager = sm
+			log.Info("Secrets Manager initialized", "secret_name", cfg.SecretsManager.SecretName)
+		}
+	}
+
+	// Initialize API key authenticator (enabled by default if Secrets Manager is configured)
+	authEnabled := cfg.SecretsManager.Enabled && secretsManager != nil
+	if authEnabled {
+		apiKeyAuthenticator = middleware.NewAPIKeyAuthenticator(secretsManager, cfg, true)
+		log.Info("API key authentication enabled")
+	} else {
+		log.Info("API key authentication disabled (for development)")
+	}
+
+	// Initialize rate limiter (enabled by default)
+	rateLimitConfig := middleware.DefaultRateLimiterConfig()
+	// Allow configuration via environment variables
+	if envRateLimit := os.Getenv("RATE_LIMIT_REQUESTS_PER_MINUTE"); envRateLimit != "" {
+		if parsed, err := strconv.Atoi(envRateLimit); err == nil && parsed > 0 {
+			rateLimitConfig.RequestsPerMinute = parsed
+		}
+	}
+	if envBurst := os.Getenv("RATE_LIMIT_BURST_SIZE"); envBurst != "" {
+		if parsed, err := strconv.Atoi(envBurst); err == nil && parsed > 0 {
+			rateLimitConfig.BurstSize = parsed
+		}
+	}
+	if os.Getenv("RATE_LIMIT_ENABLED") == "false" {
+		rateLimitConfig.Enabled = false
+	}
+
+	rateLimiter = middleware.NewRateLimiter(rateLimitConfig)
+	if rateLimitConfig.Enabled {
+		log.Info("Rate limiting enabled",
+			"requests_per_minute", rateLimitConfig.RequestsPerMinute,
+			"burst_size", rateLimitConfig.BurstSize,
+		)
+	} else {
+		log.Info("Rate limiting disabled")
+	}
+
+	// 5. Create handler dependencies
 	deps = &lambdaadapter.HandlerDependencies{
-		GetRateUseCase:     getRateUseCase,
-		GetAllRatesUseCase: getAllRatesUseCase,
-		HealthCheckUseCase: healthCheckUseCase,
-		Logger:             log,
+		GetRateUseCase:      getRateUseCase,
+		GetAllRatesUseCase:  getAllRatesUseCase,
+		HealthCheckUseCase:  healthCheckUseCase,
+		Logger:              log,
+		APIKeyAuthenticator: apiKeyAuthenticator,
+		RateLimiter:         rateLimiter,
 	}
 
 	log.Info("Lambda dependencies initialized successfully")

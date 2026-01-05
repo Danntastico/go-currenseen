@@ -35,6 +35,9 @@ type HandlerDependencies struct {
 	GetAllRatesUseCase GetAllRatesUseCase
 	HealthCheckUseCase HealthCheckUseCase
 	Logger             *logger.Logger
+	// Security dependencies (optional - can be nil if disabled)
+	APIKeyAuthenticator *middleware.APIKeyAuthenticator
+	RateLimiter         *middleware.RateLimiter
 }
 
 // GetRateHandler handles GET /rates/{base}/{target} requests.
@@ -68,6 +71,36 @@ func GetRateHandler(ctx context.Context, event events.APIGatewayProxyRequest, de
 	log.LogRequest(ctx, event.HTTPMethod, event.Path,
 		"handler", "GetRateHandler",
 	)
+
+	// Apply rate limiting (if enabled)
+	if deps.RateLimiter != nil {
+		apiKey, _ := middleware.ExtractAPIKey(event)
+		rateLimitKey := apiKey
+		if rateLimitKey == "" {
+			// Use IP address or request ID as fallback for rate limiting
+			if event.RequestContext.Identity.SourceIP != "" {
+				rateLimitKey = event.RequestContext.Identity.SourceIP
+			} else {
+				rateLimitKey = logger.GetRequestID(ctx)
+			}
+		}
+
+		allowed, err := deps.RateLimiter.Allow(ctx, rateLimitKey)
+		if err != nil || !allowed {
+			log.LogError(ctx, err, "rate limit exceeded",
+				"rate_limit_key", logger.MaskAPIKey(rateLimitKey),
+			)
+			return middleware.ErrorResponse(middleware.ErrRateLimitExceeded)
+		}
+	}
+
+	// Apply API key authentication (if enabled)
+	if deps.APIKeyAuthenticator != nil {
+		if err := deps.APIKeyAuthenticator.AuthenticateRequest(ctx, event); err != nil {
+			log.LogError(ctx, err, "authentication failed")
+			return middleware.ErrorResponse(err)
+		}
+	}
 
 	// Validate request
 	base, target, err := middleware.ValidateGetRateRequest(event)
@@ -134,6 +167,36 @@ func GetAllRatesHandler(ctx context.Context, event events.APIGatewayProxyRequest
 	log.LogRequest(ctx, event.HTTPMethod, event.Path,
 		"handler", "GetAllRatesHandler",
 	)
+
+	// Apply rate limiting (if enabled)
+	if deps.RateLimiter != nil {
+		apiKey, _ := middleware.ExtractAPIKey(event)
+		rateLimitKey := apiKey
+		if rateLimitKey == "" {
+			// Use IP address or request ID as fallback for rate limiting
+			if event.RequestContext.Identity.SourceIP != "" {
+				rateLimitKey = event.RequestContext.Identity.SourceIP
+			} else {
+				rateLimitKey = logger.GetRequestID(ctx)
+			}
+		}
+
+		allowed, err := deps.RateLimiter.Allow(ctx, rateLimitKey)
+		if err != nil || !allowed {
+			log.LogError(ctx, err, "rate limit exceeded",
+				"rate_limit_key", logger.MaskAPIKey(rateLimitKey),
+			)
+			return middleware.ErrorResponse(middleware.ErrRateLimitExceeded)
+		}
+	}
+
+	// Apply API key authentication (if enabled)
+	if deps.APIKeyAuthenticator != nil {
+		if err := deps.APIKeyAuthenticator.AuthenticateRequest(ctx, event); err != nil {
+			log.LogError(ctx, err, "authentication failed")
+			return middleware.ErrorResponse(err)
+		}
+	}
 
 	// Validate request
 	base, err := middleware.ValidateGetRatesRequest(event)

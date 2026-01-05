@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+	"unicode"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/misterfancybg/go-currenseen/internal/domain/entity"
@@ -149,6 +151,34 @@ func ValidateHealthRequest(event events.APIGatewayProxyRequest) error {
 	return nil
 }
 
+// SanitizePathParameter sanitizes a path parameter by removing control characters
+// and normalizing Unicode characters to prevent injection attacks.
+//
+// Security: This function helps prevent path traversal and injection attacks
+// by removing potentially dangerous characters.
+func SanitizePathParameter(param string) string {
+	// Remove control characters and normalize
+	var builder strings.Builder
+	for _, r := range param {
+		// Allow alphanumeric and common safe characters
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			builder.WriteRune(r)
+		}
+	}
+	return builder.String()
+}
+
+// ValidateRequestSize validates that the request body size is within limits.
+//
+// Security: Prevents oversized requests that could cause DoS attacks.
+func ValidateRequestSize(event events.APIGatewayProxyRequest) error {
+	const maxRequestSize = 10 * 1024 * 1024 // 10MB (API Gateway default)
+	if len(event.Body) > maxRequestSize {
+		return errors.New("request body too large")
+	}
+	return nil
+}
+
 // ValidateRequest is a generic request validator that checks basic request properties.
 //
 // This function:
@@ -162,9 +192,8 @@ func ValidateRequest(event events.APIGatewayProxyRequest, expectedMethod string)
 	}
 
 	// Validate request size (security: prevent oversized requests)
-	const maxRequestSize = 10 * 1024 * 1024 // 10MB
-	if len(event.Body) > maxRequestSize {
-		return errors.New("request body too large")
+	if err := ValidateRequestSize(event); err != nil {
+		return err
 	}
 
 	return nil

@@ -321,3 +321,107 @@ func TestValidateRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizePathParameter(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "valid alphanumeric",
+			input:    "USD",
+			expected: "USD",
+		},
+		{
+			name:     "with dash",
+			input:    "test-key",
+			expected: "test-key",
+		},
+		{
+			name:     "with underscore",
+			input:    "test_key",
+			expected: "test_key",
+		},
+		{
+			name:     "with control characters",
+			input:    "USD\x00\x01\x02",
+			expected: "USD",
+		},
+		{
+			name:     "with special characters",
+			input:    "USD<script>",
+			expected: "USDscript", // Letters are preserved, special chars removed
+		},
+		{
+			name:     "with path traversal attempt",
+			input:    "../../etc/passwd",
+			expected: "etcpasswd", // Letters are preserved, special chars removed
+		},
+		{
+			name:     "mixed case with numbers",
+			input:    "USD123",
+			expected: "USD123",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizePathParameter(tt.input)
+			if result != tt.expected {
+				t.Errorf("SanitizePathParameter(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestValidateRequestSize(t *testing.T) {
+	tests := []struct {
+		name    string
+		event   events.APIGatewayProxyRequest
+		wantErr bool
+	}{
+		{
+			name: "valid size",
+			event: events.APIGatewayProxyRequest{
+				Body: "small body",
+			},
+			wantErr: false,
+		},
+		{
+			name: "exactly at limit",
+			event: events.APIGatewayProxyRequest{
+				Body: string(make([]byte, 10*1024*1024)), // Exactly 10MB
+			},
+			wantErr: false,
+		},
+		{
+			name: "oversized body",
+			event: events.APIGatewayProxyRequest{
+				Body: string(make([]byte, 11*1024*1024)), // 11MB
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty body",
+			event: events.APIGatewayProxyRequest{
+				Body: "",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateRequestSize(tt.event)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateRequestSize() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
