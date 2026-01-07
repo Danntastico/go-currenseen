@@ -7,6 +7,8 @@ A Currency Exchange Rate Service built with Go, implementing Hexagonal Architect
 - **[Architecture Definition](docs/ARCHITECTURE.md)** - Complete architecture documentation with diagrams
 - **[Project Specification](docs/INITIAL_SPEC.md)** - Detailed project requirements and use cases
 - **[Implementation Plan](docs/IMPLEMENTATION_PLAN.md)** - Step-by-step implementation phases
+- **[Deployment Guide](docs/DEPLOYMENT.md)** - Complete AWS deployment instructions
+- **[Quick Start](docs/QUICK_START.md)** - Get started quickly
 
 ## 🎯 Project Overview
 
@@ -60,15 +62,22 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture diagrams a
 
 ## 📋 Current Status
 
-**Phase**: Phase 0 - Project Setup ✅
+**Phase**: Phase 11 - AWS Infrastructure as Code ✅
 
-- [x] Project specification
-- [x] Implementation plan
-- [x] Architecture definition
-- [x] Phase 0: Project setup
-- [ ] Phase 1: Domain layer
-- [ ] Phase 2: Application layer
-- [ ] Phase 3+: Infrastructure adapters
+- [x] Phase 0: Project Setup
+- [x] Phase 1: Domain Layer
+- [x] Phase 2: Application Layer
+- [x] Phase 3: DynamoDB Adapter
+- [x] Phase 4: External API Adapter
+- [x] Phase 5: Circuit Breaker
+- [x] Phase 6: Cache Strategy & Fallback
+- [x] Phase 7: Lambda Handlers & API Gateway
+- [x] Phase 8: Configuration & Environment Management
+- [x] Phase 9: Logging & Observability
+- [x] Phase 10: Security Implementation
+- [x] Phase 11: AWS Infrastructure as Code
+- [ ] Phase 12: Testing & Quality Assurance
+- [ ] Phase 13: Documentation & Deployment
 
 ## 🚀 Getting Started
 
@@ -228,14 +237,26 @@ make test-coverage
 
 ### AWS Deployment
 
-```bash
-# Build and deploy
-make sam-deploy
+See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete deployment instructions.
 
-# Or manually
-sam build
-sam deploy --guided
+**Quick Deploy:**
+```bash
+# Build and deploy to dev
+make sam-deploy-dev
+
+# Deploy to staging
+make sam-deploy-staging
+
+# Deploy to production (requires confirmation)
+make sam-deploy-prod
 ```
+
+**Using deployment script:**
+```bash
+./scripts/deploy.sh dev
+```
+
+For detailed deployment guide, see [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ### Environment Variables
 

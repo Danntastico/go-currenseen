@@ -34,8 +34,36 @@ Resources:
         - x86_64
       Environment:
         Variables:
+          # DynamoDB Configuration
           TABLE_NAME: !Ref ExchangeRatesTable
-          AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+          AWS_REGION: !Ref AWS::Region
+          
+          # Logging Configuration
+          LOG_LEVEL: INFO
+          LOG_FORMAT: json
+          
+          # Cache Configuration
+          CACHE_TTL: 1h
+          
+          # External API Configuration
+          EXCHANGE_RATE_API_URL: https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1
+          EXCHANGE_RATE_API_TIMEOUT: 10
+          EXCHANGE_RATE_API_RETRY_ATTEMPTS: 3
+          
+          # Circuit Breaker Configuration
+          CIRCUIT_BREAKER_FAILURE_THRESHOLD: 5
+          CIRCUIT_BREAKER_COOLDOWN_SECONDS: 30
+          CIRCUIT_BREAKER_SUCCESS_THRESHOLD: 1
+          
+          # Secrets Manager Configuration
+          SECRETS_MANAGER_SECRET_NAME: !Sub '${Environment}/currenseen/api-keys'
+          SECRETS_MANAGER_ENABLED: true
+          SECRETS_MANAGER_CACHE_TTL: 5m
+          
+          # Rate Limiting Configuration
+          RATE_LIMIT_REQUESTS_PER_MINUTE: 100
+          RATE_LIMIT_BURST_SIZE: 10
+          RATE_LIMIT_ENABLED: true
       Events:
         GetRate:
           Type: Api
@@ -56,10 +84,24 @@ Resources:
             Path: /health
             Method: GET
       Policies:
+        # DynamoDB: Read and write access to exchange rates table
         - DynamoDBCrudPolicy:
             TableName: !Ref ExchangeRatesTable
-        - SecretsManagerReadWrite:
-            SecretArn: !GetAtt ApiKeySecret.Arn
+        # Secrets Manager: Read-only access to API keys secret
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+                - secretsmanager:DescribeSecret
+              Resource: !GetAtt ApiKeySecret.Arn
+        # CloudWatch Logs: Write access for logging (least privilege)
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*'
       Layers:
         # Lambda Layer for Go runtime will be added here
         # Example: - !Ref GoRuntimeLayer
@@ -67,13 +109,22 @@ Resources:
   ExchangeRateApi:
     Type: AWS::Serverless::Api
     Properties:
-      StageName: prod
+      StageName: !Ref Environment
       Cors:
         AllowMethods: "'GET,OPTIONS'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
         AllowOrigin: "'*'"
+        MaxAge: "'300'"
       Auth:
-        ApiKeyRequired: true
+        ApiKeyRequired: false  # We handle API key validation in Lambda, not API Gateway
+      # Throttling configuration
+      Throttle:
+        BurstLimit: 200
+        RateLimit: 100
+      # Default route throttling
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 200
+        ThrottlingRateLimit: 100
       DefinitionBody:
         swagger: "2.0"
         info:
@@ -170,16 +221,40 @@ Resources:
         PasswordLength: 32
         ExcludeCharacters: '"@/\'
 
+  # CloudWatch Log Group for Lambda function
+  ExchangeRateFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ExchangeRateFunction}'
+      RetentionInDays: 14
+      Tags:
+        - Key: Project
+          Value: Currenseen
+        - Key: Environment
+          Value: !Ref Environment
+    DependsOn: ExchangeRateFunction
+
 Outputs:
   ExchangeRateApi:
     Description: "API Gateway endpoint URL"
-    Value: !Sub "https://${ExchangeRateApi}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+    Value: !Sub "https://${ExchangeRateApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"
   ExchangeRateFunction:
     Description: "Exchange Rate Lambda Function ARN"
     Value: !GetAtt ExchangeRateFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-FunctionArn"
   ExchangeRatesTable:
     Description: "DynamoDB Table Name"
     Value: !Ref ExchangeRatesTable
+    Export:
+      Name: !Sub "${AWS::StackName}-TableName"
+  ApiKeySecretArn:
+    Description: "Secrets Manager Secret ARN for API Keys"
+    Value: !GetAtt ApiKeySecret.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-SecretArn"
 
 Parameters:
   Environment:

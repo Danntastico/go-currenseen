@@ -97,17 +97,71 @@ run-local-server: build-local-server ## Build and run local HTTP server
 
 validate: fmt lint vet test ## Run all validation checks
 
-sam-build: build ## Build for SAM deployment
+sam-build: ## Build for SAM deployment
 	@echo "Building for SAM..."
+	@echo "Building Go Lambda function..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bootstrap ./cmd/lambda
+	@chmod +x bootstrap
+	@echo "Running SAM build..."
 	@sam build
+	@echo "SAM build complete!"
+
+sam-validate: ## Validate SAM template
+	@echo "Validating SAM template..."
+	@sam validate
+	@echo "Template validation complete!"
 
 sam-local: sam-build ## Run SAM locally
 	@echo "Running SAM locally..."
-	@sam local start-api
+	@echo "API will be available at http://localhost:3000"
+	@sam local start-api --port 3000
 
-sam-deploy: sam-build ## Deploy to AWS
-	@echo "Deploying to AWS..."
+sam-deploy-dev: sam-build sam-validate ## Deploy to dev environment
+	@echo "Deploying to dev environment..."
+	@sam deploy \
+		--stack-name currenseen-dev \
+		--parameter-overrides Environment=dev \
+		--capabilities CAPABILITY_IAM \
+		--region us-east-1 \
+		--no-confirm-changeset \
+		--no-fail-on-empty-changeset
+
+sam-deploy-staging: sam-build sam-validate ## Deploy to staging environment
+	@echo "Deploying to staging environment..."
+	@sam deploy \
+		--stack-name currenseen-staging \
+		--parameter-overrides Environment=staging \
+		--capabilities CAPABILITY_IAM \
+		--region us-east-1 \
+		--confirm-changeset
+
+sam-deploy-prod: sam-build sam-validate ## Deploy to production environment
+	@echo "Deploying to production environment..."
+	@echo "WARNING: This will deploy to PRODUCTION!"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		sam deploy \
+			--stack-name currenseen-prod \
+			--parameter-overrides Environment=prod \
+			--capabilities CAPABILITY_IAM \
+			--region us-east-1 \
+			--confirm-changeset; \
+	fi
+
+sam-deploy: sam-build sam-validate ## Deploy to AWS (guided mode)
+	@echo "Deploying to AWS (guided mode)..."
 	@sam deploy --guided
+
+sam-logs: ## Tail Lambda function logs
+	@echo "Tailing Lambda function logs..."
+	@sam logs -n ExchangeRateFunction --stack-name currenseen-dev --tail
+
+sam-delete: ## Delete SAM stack
+	@echo "Deleting SAM stack..."
+	@read -p "Enter stack name (default: currenseen-dev): " stack_name; \
+	stack_name=$${stack_name:-currenseen-dev}; \
+	sam delete --stack-name $$stack_name
 
 check: validate ## Alias for validate
 
